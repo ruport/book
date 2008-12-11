@@ -1,0 +1,125 @@
+== Preface ==
+
+=== What is Ruport Anyway? ===
+
+How often have you, as a developer, needed to create a business report from some
+random data, format it to look good in the process, and complete it within a
+tight timeline? Did you have fun doing it? Well, we won't claim that Ruport can
+make reporting "fun," but it can certainly make it easier.
+
+Ruport is a collection of tools to help developers add reporting capabilities to
+their applications. At its core, Ruport provides facilities for collecting data
+into common structures, manipulating that data, and then outputting it in a
+variety of common formats. As a developer's toolset, it aims to ease the burden
+of creating reporting applications, but it is not itself a reporting
+application.
+
+Step back a moment and consider what is meant by "reporting" and what is
+normally involved in adding reporting functionality to an application. This
+understanding will help explain where Ruport fits into the overall development
+process. You might think of a report as just formatted output that you can send
+to a printer, so you might think of a reporting toolset as a collection of
+formatting tools. While Ruport includes such tools, it is more than that.
+
+In order to create a report, you first need some data. This might commonly be in
+a database, but it might also be in a CSV formatted file or some other data
+source altogether. Consequently, you need some way to get your data into a
+structure that can be used by your application. This is the first place where
+Ruport can help. Ruport has facilities for querying databases and for extracting
+data from CSV files. It ties into several other Ruby libraries, including Ruby
+DBI, ActiveRecord, and FasterCSV to provide a choice of data collection
+mechanism to fit the specific needs of a particular application.
+
+Of course, collecting data is only the first step. What Ruport offers next is a
+set of standard data structures that make working with the collected data much
+easier and more consistent. Once you populate one of Ruport's data structures,
+the manipulation of that data is the same regardless of the source and method of
+collection. This allows you to focus on the task instead of the differences
+between libraries.
+
+Ruport offers a variety of methods to manipulate the collected data. Just some
+of the capabilities it provides are: adding and deleting rows and columns,
+renaming columns, sorting, performing calculations, and grouping. It tries to
+supply you with everything needed to process your information and get only the
+desired output when it comes time to format and render the report.
+
+Finally, Ruport includes a flexible system for formatting/rendering your
+reports. Ruport's controller component allows you to define the stages involved
+in constructing a particular report. It allows you to set up expectations for
+data that should be available and whether that data is required or optional. The
+formatting system then allows you to define how a report should be rendered for
+a particular output format. All of Ruport's data structures have predefined
+controllers and formatters for a variety of formats.
+
+As you can see, there is much more involved in the process of reporting than
+just formatting the output. Ruport contains a comprehensive set of tools to make
+each step of the process less painful.
+
+=== About This Book ===
+
+This book aims to provide a thorough understanding of all of Ruport's capabilities.  It assumes a knowledge of the Ruby programming language and certain other libraries and frameworks, such as Rails and its ORM component ActiveRecord.  At a minimum, you should have a working knowledge of Ruby to understand the code examples.                           
+
+We have structured the book in a way that we hope provides something for
+everyone.  We start with a tutorial introduction which uses data from Ruby's
+Tattle project to form a simple but fully functional report.  We then dive into
+PayR, a simple Rails payroll application that uses Ruport extensively, and provides a good example of how we actually work with Ruport in our day to day jobs.  The book is then rounded off with a series of cheatsheets which will serve both as a reference in your daily work as well as a place to look for more details as you read through the main content of the book.  You'll find the appropriate sections cross-referenced as you read through the Tattle and PayR discussions.     
+
+This book has primarily been a labor of love.  We've developed it under a
+fully transparent, community oriented process.  Not only do our electronic copies lack DRM, you actually have the rights to do basically whatever you want
+with your copy.  The licensing terms are available at:
+
+  http://creativecommons.org/licenses/by-sa/3.0/  
+
+Even still, if you like the book, we ask that you support the project in one way
+or another.  The easiest way to do this is buy a PDF or printed copy from 
+ruportbook.com.   When you do this, 25% of our revenue goes to a worthwhile
+charity, Engineers Without Borders* (footnote: http://www.ewb-usa.org/), while
+the rest goes to supporting the folks who have made this book possible.
+
+If you'd prefer the micro-payment approach, you can also offer up donations of
+any amount via ruportbook.com that will go directly to the authors.  This might
+be a good choice if you've picked up the PDF from a friend or are using just 
+the HTML copies of the book.
+
+Of course, there is something much more important than financial contributions
+to us:  you can learn to master Ruport and its supporting packages.  With this
+knowledge, you can become an active contributor to our community, which is the
+best way to let us know the book was worth something to you.
+
+We hope you enjoy the book, and that it makes your reporting life suck less, 
+through Ruby.
+
+=== Acknowledgments ===
+
+Without the help of the Ruport community, this book would quite literally not
+exist.  
+
+As usual, Gregory Gibson of BTree Technology has supported Ruport and
+this book by offering us interesting jobs to work on, including PayR.   He has
+also helped us out by covering some of the book expenses and generally doing  
+things to make our lives easier.
+
+Dinko Mehinovic did the typesetting for the print edition of the book.  This
+amounted to many hours of work, and the pain of dealing with rapid revisions
+from the authors, and is much appreciated.     
+
+The company Freerange Future donated their time to help out with the typesetting
+for the web, which let us synchronize the print and web release of the book.
+
+The following folks have also helped out in ways that run the gamut from keeping
+us gainfully employed while still working on Ruport, to proofreading, editing,
+and reviewing content:
+
+Ian Bailey, Brad Ediger, Pat Eyler, James Edward Gray II, Stefan Mahlitz, Jeremy
+McAnally, Don Nielsen, David Pollak, Rajesh Ramachander, Sergio da Silva, and
+Andrea O.K. Wright
+
+We'd also like to tip our hats to some of the folks who have helped develop
+Ruport, through code contributions large and small:
+
+Daniel Berger, Iain Broadfoot, Chris Carter, Simon Claret, Brad Ediger, Michael
+Fellinger, Dudley Flanders, James Edward Gray II, James Healy, Wes Hays, Francis Hwang, Stefan Mahlitz, Dinko Mehinovic, Mathijs Mohlmann, Dave Nelson, Eric Pugh,
+Patrice De Saint Steban, and Marshall T. Vandegrift
+
+Finally, thank you to those who pre-ordered the book and provided feedback.  The
+book is better because of your efforts.

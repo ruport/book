@@ -1,0 +1,477 @@
+h2. Report Formatting
+
+h3. Introduction
+
+One of the reports needed for PayR is a call-in sheet that lists employees,
+grouped by type, and their hours over a two week period.  Below is the formatted
+output from this report.
+
+<img src="payr_formatting_screen1.png">
+
+In this chapter, we'll look in detail at how we created this report. The first
+steps will be to define a controller and one or more formatters, but since this is
+a Rails project, you first need to decide where to put the files in the Rails
+directory structure. There's no single best location; some people prefer to place
+them in @app/reports@ and others in @lib@, so that decision is ultimately up to
+you for your own projects. The code for all of the reports in PayR is located in
+@app/reports@. Each class has its own file to make browsing easy.
+
+h3. Data Model
+
+Before we begin to define the report, let's take a look at the model definitions
+to get an idea of how the data is structured and how the models are associated
+with each other. Since PayR is a time sheet application, one of the core models
+is Employee. There are also various other models used to hold employee time data.
+You can find the migrations used to create the database tables in the PayR
+source.
+
+<pre><code>
+  class Employee < ActiveRecord::Base      
+    has_many :regular_times
+    has_many :lunch_times
+    has_many :other_times
+  end
+
+  class RegularTime < ActiveRecord::Base
+    belongs_to :employee 
+  end
+
+  class LunchTime < ActiveRecord::Base       
+    belongs_to :employee
+  end
+
+  class OtherTime < ActiveRecord::Base   
+    belongs_to :employee
+  end
+</code></pre>
+
+For the report, we need to get all of the employees and calculate some of the
+data to be displayed. Then we need to group all of the employees by type and
+display them, formatted as shown above.
+
+h3. Ruport Controllers
+
+In Ruport, the first step to achieving formatted output is to define a controller
+for the report. This is the component that establishes the steps that
+will be called to generate the report's output. It also allows you to specify
+options that should be populated and to do some setup and manipulation of the
+data prior to formatting. A first pass at defining a very basic controller for the
+report might be:
+
+<pre><code>
+  class CallInController < Ruport::Controller
+
+    stage :call_in_sheet
+
+  end
+</code></pre>
+
+One thing to notice is that the controller class should be a subclass of
+@Ruport::Controller@. Doing so gives your class access to the functionality of
+Ruport's rendering system. This particular class then specifies that one stage
+will be called during the rendering process.
+
+This means that Ruport will look for a method named @build_call_in_sheet@
+(formatter hook methods are named "build_" plus the name of the stage) in the
+formatter and, if it exists, will call it.  In your formatter, you can either define the build methods directly or you can use the syntax that Ruport provides for defining formatter hook methods, @build :stage_name@.
+
+You can define as many stages as desired and Ruport will try to call all of them.
+If a method for a particular stage isn't found, Ruport will simply ignore it.
+This becomes useful when you want to use a single controller with multiple
+formatters, some of which might not implement all of the stages.
+
+h3. Data Collection
+
+Now let's look at the data we need. As shown above, the report has the following
+column headings: "<i>Employee Type</i>", "<i>Employee</i>", "<i>Week 1</i>",
+"<i>Week 2</i>", "<i>Regular Hours</i>", "<i>Overtime</i>", "<i>Lunch</i>",
+"<i>Personal</i>", "<i>Sick</i>", and "<i>Vacation</i>". If you look at the
+columns in the employee table defined by the migration, you can see that
+employees have @first_name@, @last_name@, and @group@ attributes. These will be
+used to populate "<i>Employee</i>" and "<i>Employee Type</i>".
+
+All of the other columns contain calculated data. Since our focus is on producing
+the output using Ruport, we won't go into detail on all of the techniques used to
+generate the data other than to say that the Employee model is provided with an
+@employee_record@ method and a @name@ method.  The output of each might look
+something like this:
+
+<pre>
+  record.name #=> "Gregory Brown" 
+  record.employee_record(14.days.ago) #=> 
+    { :week1=>"17.43", :regular_hours=>"17.43", 
+      :week2=>"0.00", :employee=>"Gregory Brown", :lunch=>"0.00", 
+      :employee_type=>"Dentist", :overtime=>"0.00", :personal=>"0.00", 
+      :sick=>"8.00", :vacation=>"24.00" }
+</pre>
+
+One other thing to point out with this code is that the @employee_record@ method
+expects a start date as a parameter. The report outputs two weeks worth of
+employee time sheet data, beginning with the week containing the start date. 
+
+What this means for our report is that we need some way of passing in the start date as an option.
+
+h3. Setting Options and Data
+
+To do so, we make use of Ruport's @options@ object. Each controller and formatter
+share an @options@ object, implemented as a subclass of OpenStruct. This allows you to use
+named options at any point in the rendering or formatting process. If you have
+some required data that is to be supplied by the code that renders the report,
+and want to be sure of its presence, you can use the @required_option@ class
+method. Ruport will raise an exception if the data for any required options are
+not supplied.
+
+<pre><code>
+  class CallInController < Ruport::Controller
+
+    stage :call_in_sheet
+    
+    required_option :start_date
+
+  end
+</code></pre>
+
+Later, when we actually render a specific instance of the report, we need to
+provide a value for the start_date using this option.
+
+Although our employee model now has the ability to provide a hash of data for the
+report (to become a record in the report's data table), we still need to create a
+Ruport table from all of the employee records and then create a Grouping of the
+data. In order to provide some separation in our code, we define a class named
+@CallInAggregator@ to do the work.
+
+<pre><code>
+  class CallInAggregator           
+
+    def initialize(options={})
+      @start = options[:start]    
+    end
+
+    def to_grouping
+      table = Table([:employee_type, :employee, :week1, :week2, :regular_hours,
+        :overtime, :lunch, :personal, :sick, :vacation ]) do |t|
+        Employee.find(:all).each {|e| t << e.employee_record(@start) }
+      end     
+      table.rename_columns(:week1 => "Week 1",
+                           :week2 => "Week 2")  
+      table.rename_columns {|c| c.to_s.titleize }
+
+      Grouping(table,:by => "Employee Type")
+    end
+
+  end
+</code></pre>
+
+The constructor takes a hash and expects to find a member with the :start key.
+This is used to populate an instance variable named @start@. The @to_grouping@
+method does the rest of the data manipulation.
+
+We need to create a Ruport table from the employee data and to do so, we use one
+of the shortcuts provided by Ruport, the @Table@ method. It takes an array of
+column names and, optionally, a block that can be used to populate the table. In
+our example, we find all of the employees and then iterate through them, calling
+the @employee_record@ method on each one and appending the returned data as a row
+in the table. The block associated with @Table@ is passed a @Data::Feeder@ object
+which will be explained in more detail elsewhere, (footnote: See the Data
+Manipulations cheatsheet for more detail.) but for now, just know that you can
+use the @<<@ method to add rows to the table.
+
+After the table is created, we use Ruport's @rename_columns@ method to give the
+columns the required names for the report. First we need to manually rename the
+"week1" and "week2" columns to capitalize and add spaces, resulting in "Week 1"
+and "Week 2". Notice you can pass a hash to @rename_columns@ which maps the
+old column names to the new column names. The next call to
+@rename_columns@ uses the block form and calls @to_s@ and @titleize@ for each of
+the column names.
+
+The last data manipulation step is to group the data by creating a Ruport
+Grouping. We use the Kernel method @Grouping@ to create it. This method takes two
+paramaters; a table or group that will be used as the source of data to create
+the Grouping and the name of the column or columns to group by.
+
+h3. Using the @setup@ Method
+
+At this point we have finished populating the table that will be the basis for
+the final report. Next, we set this grouping as the controller's data source, as
+follows:
+
+<pre><code>
+  class CallInController < Ruport::Controller
+
+    stage :call_in_sheet
+
+    def setup
+      self.data ||=
+        CallInAggregator.new(:start => options[:start_date]).to_grouping
+    end
+
+  end
+</code></pre>
+
+We create a new CallInAggregator and pass in the :start parameter, using the
+@:start_date@ option that we mentioned earlier. Then we call the @to_grouping@
+method on the newly created CallInAggregator object. Finally, the resulting
+Grouping is set as the controller's data attribute. The data attribute is available
+in both your controller and any associated formatters to hold the report's data.
+
+Note that this code is contained in a method named @setup@. The @setup@ method is
+special in that, if present in your controller, it will be called after all of the
+options have been set (and after the data attribute has been set, if you pass in
+the data at rendering-time). Consequently, you have access within @setup@ to all
+of the information supplied to the controller, allowing you to do data
+manipulations or anything else that you might need to accomplish prior to actual
+formatting.
+
+h3. Using the Helpers Module
+
+We need to add one more thing to the controller before moving on to the formatter.
+Our report is going to have a header that includes the date range. We want these
+dates to be in a specific format, so we use the @strftime@ method to output them
+in the proper format. We could just do this in the formatter, but that might not
+be particularly DRY. What if we want to use the dates in several different
+formatters (for different output formats) or even in multiple locations within a
+single formatter? This is where you can use a special module called @Helpers@, as
+follows:
+
+<pre><code>
+  class CallInController < Ruport::Controller
+
+    stage :call_in_sheet
+
+    def setup
+      self.data ||=
+        CallInAggregator.new(:start => options[:start_date]).to_grouping
+    end
+
+    module Helpers
+      def start_date
+        format_date(options.start_date)
+      end
+       
+      def end_date
+        format_date(options.start_date + 13.days)
+      end
+       
+      def format_date(date)
+        date.strftime("%m/%d/%Y")
+      end
+    end
+
+  end
+</code></pre>
+
+We define @start_date@ and @end_date@ methods, containing the code to calculate
+and format the dates, within the @Helpers@ module. If present, @Helpers@ will be
+mixed in to the formatter (or formatters). This allows you to call any of the
+module's methods in your formatters and satisfies the DRY principle in that we
+only have to define them once.
+
+h3. Ruport Formatters
+
+The next step in creating the output is to define one or more formatters for each
+of the output formats you want to produce. Each one will register itself as the
+formatter for a particular named format. For our report, we want to be able to
+produce both PDF and HTML output, so we need two formatters.
+
+<pre><code>
+  class PDF < Ruport::Formatter::PDF
+    
+    renders :pdf, :for => CallInController
+       
+  end        
+  
+  class HTML < Ruport::Formatter::HTML
+    
+    renders :html, :for => CallInController
+    
+  end
+</code></pre>
+
+Although you can define formatter classes that subclass @Ruport::Formatter@
+directly, if your output is going to be one of the four that Ruport supports
+internally (PDF, HTML, CSV, or text), you probably want to subclass the built-in
+formatter for that type of output. The reason is that each of the built-in
+formatters contains predefined helper methods to make the task of developing the
+formatting code much easier.
+
+For our call-in report, we create formatters for PDF and HTML output by
+subclassing @Ruport::Formatter::PDF@ and @Ruport::Formatter::HTML@, respectively. The
+formatters call the @renders@ class method in order to register themselves with
+the controller. Each supplies the name of the format and the controller for which it
+will supply output.
+
+Next we add the actual formatting code. Recall that our controller defined a single
+stage for the report (:call_in_sheet), so our formatter will need to supply an
+implementation for the :call_in_sheet stage. For the PDF formatter, we have the
+following:
+
+<pre><code>
+  class PDF < Ruport::Formatter::PDF
+    
+    renders :pdf, :for => CallInController
+       
+    build :call_in_sheet do
+      pad_bottom(10) do
+        add_text "Call In Sheet (#{start_date} - #{end_date})" 
+      end                                                      
+      render_grouping data, options.to_hash.merge(:formatter => pdf_writer)       
+    end
+    
+  end        
+</code></pre>
+
+The @pad_bottom@ method is one of the helpers provided by the built-in PDF
+formatter and, as its name implies, adds the specified amount of space to the
+bottom of the output created within the associated block. There are many of these
+types of helpers in the PDF formatter to assist with properly positioning and
+drawing output on the page, suitable for printing. Another is the @add_text@
+method that we use to output the header. Note that we use the @start_date@ and
+@end_date@ methods that we defined earlier in the @Helpers@ module.
+
+Finally, we call the @render_grouping@ method. Since the data that we want to
+output is a Grouping object and since groupings have their own predefined
+controller, we can use this method to pass off the work to the built-in Grouping
+controller. We supply it with the data attribute as the first parameter, which you
+will recall was set to the Grouping created by the CallInAggregator.
+
+The second parameter consists of the formatter options object, which we convert
+to a hash. We need to pass these along because we're asking a different controller
+to create output for us, so we need to make sure it has all of the options that
+were sent to the main controller, in case it needs to use some of them. In the case
+of a PDF, we also need to do more - pass in the current formatter's @pdf_writer@
+object as the :formatter option.
+
+The built-in PDF formatter contains an object called @pdf_writer@ which is an
+instance of @PDF::Writer@. It is a representation of the PDF document we're
+creating and as such, we want all of our output to be contained in this document.
+If we don't include it in the options, the formatter for the Grouping controller
+will create a new @pdf_writer@ object and we won't get the expected results. Other
+output formats won't generally have this concern.
+
+Below is the formatter for the HTML output:
+
+<pre><code>
+  class HTML < Ruport::Formatter::HTML
+    
+    renders :html, :for => CallInController
+    
+    build :call_in_sheet do
+      output << textile("h3. Call In Sheet (#{start_date} - #{end_date})")   
+      output << data.to_html(:style => :justified)
+    end
+    
+  end
+</code></pre>
+
+For HTML, we can just append all of the formatted data to the output object as a
+string. First we generate the header using the @textile@ method. This is a helper
+provided by the built-in HTML formatter and uses RedCloth to evaluate the string
+provided in textile format. Next we call @to_html@ on the data. This is a
+shortcut method to render the Grouping as HTML output. The built-in formatters
+define a number of different output styles for groupings, here we specify the
+:justified style.
+
+h3. Using Templates
+
+Now that the controller and formatters are defined, we're ready to actually
+generate the output, right? In fact, we could do so, but let's do one more thing
+first. You may have noticed, particularly with the PDF formatter, that we didn't
+define any formatting options, such as font size, alignment of data in the
+columns, page layout, etc. If we don't do anything else, Ruport will use default
+values to format the report. This may or may not be what you want, so you need to
+experiment with the built-in default formats to see if they fit your needs.
+
+For the call-in report, we decided to set some formatting options to customize
+its look. You can define all of these options at the time of rendering the
+report, but that wouldn't be very portable or very DRY. You would need to define
+the options every time you render the report. Instead, Ruport gives you the
+option to define formatting templates.
+
+Templates are useful in many different situations. They basically allow you to
+predefine any number of options and have those options available to your
+formatter. This is helpful if you want to render the same report in multiple
+locations or if you want to define a consistent set of options to use for a
+number of different reports.
+
+You define a template by using the @create@ method of @Ruport::Formatter::Template@
+and giving the template a name. Here's the template we defined for the PayR
+reports:
+
+<pre><code>
+  Ruport::Formatter::Template.create(:default) do |format|
+
+    format.page = {
+      :layout => :landscape
+    }
+
+    format.grouping = {
+      :style => :separated
+    }
+
+    format.text = {
+      :font_size => 16,
+      :justification => :center
+    }
+
+    format.table = {
+      :font_size         => 10,
+      :heading_font_size => 10,
+      :maximum_width     => 720,
+      :width             => 720
+    }
+
+    format.column = {
+      :alignment => :right
+    }
+
+    format.heading = {
+      :alignment => :right,
+      :bold      => true
+    }
+
+  end
+</code></pre>
+
+Notice that these are mostly formatting instructions that will be used by the
+formatters (primarily by the PDF formatter). The individual formatters will
+simply ignore any options that they don't use. Once we have the template defined,
+we will pass its name as the :template option when we render the report and the
+template will be available to the formatter.  (footnote: See the Ruport Formatting cheatsheet for more details on template usage.)
+
+h3. Producing Output
+
+Now we're finally ready to actually render the output. While there are a number
+of different ways you can accomplish this, let's look at how you might typically
+do so in the context of a Rails project like PayR. We add a method to one of our
+controllers to generate the report.
+
+<pre><code>
+  class ManagerController < ApplicationController
+  
+    def call_in_sheet
+      pdf = CallInController.render_pdf(
+        :start_date => Time.parse(params[:period]),
+        :template   => :default
+      )
+    
+      send_data pdf, :type         => "application/pdf",
+                     :disposition  => "inline",
+                     :filename     => "call_in.pdf"
+    end
+    
+  end
+</code></pre>
+
+To generate a PDF report, we call @render_pdf@ on the CallInController, passing in
+the start_date option and the name of the template. We assign the output to a
+variable called @pdf@ and then use the @send_data@ method to stream the output to
+the user's browser. We supply the type of the output as being "application/pdf"
+and, although optional, we define the disposition and filename. Rendering HTML
+format is similar, but you can render the output directly rather than streaming
+it with @send_data@.
+
+This chapter provided an overview of Ruport's formatting system through a
+real-world example from the PayR project. For more on rendering and formatting,
+you can refer to the cheatsheets. The next chapter will look at
+another of PayR's reports in order to demonstrate more of Ruport's formatting
+capabilities, including graphing support.

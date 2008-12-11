@@ -1,0 +1,543 @@
+h2. Cheatsheet: Data Manipulations
+
+A powerful aspect of Ruport is that it allows you to work with a small set of core
+data structures which can be populated from a number of different sources. It 
+is possible to do most common data manipulations without much effort.  Here 
+we'll cover how to do sorting and searching, summation, averages, and tabular
+column operations such as calculated fields.  We'll also look at some of
+Ruport's more advanced data summarization tools.
+
+h3. Sorting Tables
+
+If you're used to Enumerable#sort_by, you'll have no problem sorting Ruport's
+Table objects. Below is a sample of the most elementary uses of table sorting:             
+
+<pre><code>
+>> puts t
++--------------------------------------------------------------------------+
+| id |    name     |    phone     |    street    |      town       | state |
++--------------------------------------------------------------------------+
+| 1  | Inky        | 555-000-1234 | Druary Lane  | Union City      | CT    |
+| 2  | Blinky      | 525-052-9123 | Apple Street | Robot Town      | NJ    |
+| 3  | Clyde       | 247-219-4820 | Sandbox Hill | Alvin's Landing | PA    |
+| 4  | Pacman      | 283-102-8293 | Rat Avenue   | Southford       | VT    |
+| 5  | Mrs. Pacman | 214-892-1892 | Conch Walk   | New York        | NY    |
++--------------------------------------------------------------------------+ 
+
+>> puts t.sort_rows_by { |r| r.name }
++--------------------------------------------------------------------------+
+| id |    name     |    phone     |    street    |      town       | state |
++--------------------------------------------------------------------------+
+| 2  | Blinky      | 525-052-9123 | Apple Street | Robot Town      | NJ    |
+| 3  | Clyde       | 247-219-4820 | Sandbox Hill | Alvin's Landing | PA    |
+| 1  | Inky        | 555-000-1234 | Druary Lane  | Union City      | CT    |
+| 5  | Mrs. Pacman | 214-892-1892 | Conch Walk   | New York        | NY    |
+| 4  | Pacman      | 283-102-8293 | Rat Avenue   | Southford       | VT    |
++--------------------------------------------------------------------------+
+
+>> puts t.sort_rows_by("name")
++--------------------------------------------------------------------------+
+| id |    name     |    phone     |    street    |      town       | state |
++--------------------------------------------------------------------------+
+| 2  | Blinky      | 525-0529-123 | Apple Street | Robot Town      | NJ    |
+| 3  | Clyde       | 247-219-4820 | Sandbox Hill | Alvin's Landing | PA    |
+| 1  | Inky        | 555-000-1234 | Druary Lane  | Union City      | CT    |
+| 5  | Mrs. Pacman | 214-892-1892 | Conch Walk   | New York        | NY    |
+| 4  | Pacman      | 283-102-8293 | Rat Avenue   | Southford       | VT    |
++--------------------------------------------------------------------------+
+=> nil
+>> puts t.sort_rows_by("name", :order => :descending)
++--------------------------------------------------------------------------+
+| id |    name     |    phone     |    street    |      town       | state |
++--------------------------------------------------------------------------+
+| 4  | Pacman      | 283-102-8293 | Rat Avenue   | Southford       | VT    |
+| 5  | Mrs. Pacman | 214-892-1892 | Conch Walk   | New York        | NY    |
+| 1  | Inky        | 555-000-1234 | Druary Lane  | Union City      | CT    |
+| 3  | Clyde       | 247-219-4820 | Sandbox Hill | Alvin's Landing | PA    |
+| 2  | Blinky      | 525-0529-123 | Apple Street | Robot Town      | NJ    |
++--------------------------------------------------------------------------+
+</code></pre>   
+
+You can also sort by multiple columns, if needed:
+
+<pre><code> 
+>> puts a
++-----------+
+| a | b | c |
++-----------+
+| 1 | 2 | 3 |
+| 1 | 4 | 5 |
+| 1 | 3 | 9 |
+| 2 | 1 | 7 |
+| 0 | 1 | 9 |
++-----------+     
+  
+>> puts a.sort_rows_by(["a","b"])
++-----------+
+| a | b | c |
++-----------+
+| 0 | 1 | 9 |
+| 1 | 2 | 3 |
+| 1 | 3 | 9 |
+| 1 | 4 | 5 |
+| 2 | 1 | 7 |
++-----------+
+</code></pre>
+
+NOTE: When specifying column names as a parameter, you can be sure that the 
+sort will be stable, e.g. the order of the records will be preserved in the 
+event of a sorting 'tie'.  When you use the block form, you are responsible for
+ensuring that the sort has a stabilizer.  
+
+h3. Sorting Groupings
+
+Ruport also includes support for sorting of groupings. In the simplest case, you can order a Grouping by the group names by setting the :order option to a value of :name.
+
+<pre><code>
+>> puts a
++-----------+
+| a | b | c |
++-----------+
+| 1 | 2 | 3 |
+| 1 | 4 | 5 |
+| 1 | 3 | 9 |
+| 2 | 1 | 7 |
+| 0 | 1 | 9 |
++-----------+     
+
+>> g = Grouping(a, :by => "a", :order => :name)
+>> g.to_a.map {|name,group| name }
+=> [0, 1, 2]
+</code></pre>
+
+For more complex situations, you can order by an arbitrary block. In this example, we sort the groups by their size:
+
+<pre><code>
+>> g = Grouping(a, :by => "a", :order => lambda {|g| g.size })
+>> g.to_a.map {|name,group| name }
+=> [0, 2, 1]
+</code></pre>      
+
+You can also sort the groupings after they have been created using the @sort_grouping_by@ (which returns a new sorted grouping) and @sort_grouping_by!@ (which sorts the existing grouping) methods.
+
+<pre><code>
+>> g = Grouping(a, :by => "a")
+>> sorted = g.sort_grouping_by {|g| g.size }
+>> g.sort_grouping_by!(:name)
+</code></pre>      
+
+h3. Searching Rows in a Table
+
+In addition to Enumerable's find/select, Ruport offers <tt>Table#rows_with</tt>. For many common searching operations, this comes in handy.
+
+<pre><code>
+> puts t
++-----------+
+| a | b | c |
++-----------+
+| 1 | 2 | 3 |
+| 7 | 3 | 1 |
+| 2 | 2 | 3 |
+| 7 | 6 | 9 |
++-----------+
+
+>> t.rows_with_a(7).length
+=> 2  
+
+>> t.rows_with(:c => 3, :a => 1).length
+=> 1   
+
+>> t.rows_with([:a, :c]) { |a,c| a > 5 && c < 5 }.length
+=> 1    
+
+>> t.rows_with([:a, :c]) { |a,c| a > 5 && c < 5 }[0].to_a
+=> [7, 3, 1]               
+</code></pre>
+  
+h4. Custom Searches
+
+<tt>Table#rows_with</tt> also works with custom Record classes, allowing you to 
+use methods as searching criteria.
+ 
+<pre><code>
+class Person < Ruport::Data::Record
+  
+  def name
+    first_name + " " + last_name
+  end  
+
+end   
+
+t = Table(:column_names => %w[first_name last_name email], 
+          :record_class => Person)
+t << %w[Gregory Brown a@a.com]
+t << %w[Joe Loop b@b.com]
+t << %w[Alfonzo Stevens c@d.com]
+t << %w[Gregory Brown f@f.com]
+
+puts t.rows_with_name("Gregory Brown").length
+=> 2
+puts t.rows_with(:name => "Gregory Brown", :email => "a@a.com").length
+=> 1
+</code></pre>
+
+h3. Sums and Averages 
+
+Basic sums are simple in Ruport via <tt>Table#sigma</tt> (aliased as @sum@).
+Both by-column and by-block sums are supported.
+
+<pre><code>
+>> a = Table(%w[a b c])
+>> a << [1,9,1.7]
+>> a << ["2","13","12.1"]
+>> a << [5,1,6]
+
+>> a.sigma("a")
+=> 8
+
+>> a.sigma("c")
+=> 19.8
+
+>> a.sigma { |r| r.a.to_i + r.c.to_f }
+=> 27.8
+</code></pre>
+
+You'll notice that summing by column automatically coerces strings to their
+numeric types, while the block form does not.  If you want to avoid implicit
+conversion, you should use the block form for summations.
+
+Basic averages might be computed as follows:
+
+<pre><code>
+average_cost = table.sum("cost") / table.length
+</code></pre>
+
+You can also do sums across Grouping objects in the same manner as you do with Tables:
+
+<pre><code>
+>> table = Table(%w[col1 col2 col3]) {|t| t << [1,2,3] << [3,4,5] << [5,6,7] }
+>> grouping = Grouping(table, :by => "col1")
+>> grouping.sigma("col2")
+=> 12
+>> grouping.sigma(0)
+=> 12
+>> grouping.sigma {|r| r.col2 + r.col3 }
+=> 27
+>> grouping.sum {|r| r.col2 + 1 }
+=> 15
+</code></pre>
+
+h3. Tabular Column Operations and Calculated Fields 
+
+Ruport offers a whole bunch of column operations to make life easier when 
+manipulating Table data. 
+
+Starting with this data:
+
+<pre><code>
+>> puts a
++--------+
+| a | b  |
++--------+
+| 1 |  9 |
+| 2 | 13 |
+| 5 |  1 |
+| 5 |  1 |
++--------+
+</code></pre>
+
+Adding a calculated column:
+
+<pre><code>
+>> a.add_column("c") { |r| r.a + r.b }
+>> puts a
++-------------+
+| a | b  | c  |
++-------------+
+| 1 |  9 | 10 |
+| 2 | 13 | 15 |
+| 5 |  1 |  6 |
+| 5 |  1 |  6 |
++-------------+ 
+</code></pre>  
+
+Adding a fancily calculated column:
+
+<pre><code>
+>> a.add_column("a1",:before => "b", :default => 0) do |r|
+>>   r.a + 1 if r.b > 10
+>> end 
+>> puts a
++------------------+
+| a | a1 | b  | c  |
++------------------+
+| 1 |  0 |  9 | 10 |
+| 2 |  3 | 13 | 15 |
+| 5 |  0 |  1 |  6 |
+| 5 |  0 |  1 |  6 |
++------------------+
+</code></pre>
+
+Doing a column replacement:
+
+<pre><code>
+>> a.replace_column("b") { |r| r.b.to_f }
+>> puts a
++--------------------+
+| a | a1 |  b   | c  |
++--------------------+
+| 1 |  0 |  9.0 | 10 |
+| 2 |  3 | 13.0 | 15 |
+| 5 |  0 |  1.0 |  6 |
+| 5 |  0 |  1.0 |  6 |
++--------------------+
+</code></pre>
+
+Renaming columns:
+
+<pre><code>
+>> a.rename_columns { |c| "Col: #{c}" }
+>> puts a
++------------------------------------+
+| Col: a | Col: a1 | Col: b | Col: c |
++------------------------------------+
+|      1 |       0 |    9.0 |     10 |
+|      2 |       3 |   13.0 |     15 |
+|      5 |       0 |    1.0 |      6 |
+|      5 |       0 |    1.0 |      6 |
++------------------------------------+   
+</code></pre>      
+
+Building a new table based on a pivot:      
+
+<pre><code>
+>> puts t.pivot("Col: a1", :group_by => "Col: a", :values => "Col: b" )
++---------------------+
+| Col: a |  0  |  3   |
++---------------------+
+|      1 | 9.0 |      |
+|      2 |     | 12.0 |
+|      5 | 1.0 |      |
++---------------------+     
+</code></pre>
+  
+Building a sub table:
+
+<pre><code>
+>> c = a.column_names.grep(/a/)
+=> ["Col: a", "Col: a1"]
+>> puts a.sub_table(c) { |r| r[0] < 5 }
++------------------+
+| Col: a | Col: a1 |
++------------------+
+|      1 |       0 |
+|      2 |       3 |
++------------------+    
+</code></pre>      
+
+h3. Filtering and Transforming Data
+
+If you want to constrain data as it is being aggregated, rather than after it has all been collected, @Data::Feeder@ provides a simple proxy object that allows you to do exactly that.
+
+<pre><code>
+>> t = Table(%w[a b c])
+>> feeder = Ruport::Data::Feeder.new(t)
+>> feeder.filter {|r| r.a < 10 }
+>> feeder << [1,2,3] << [9,6,1] << [11,3,2] << [2,1,7]
+>> puts t
++-----------+
+| a | b | c |
++-----------+
+| 1 | 2 | 3 |
+| 9 | 6 | 1 |
+| 2 | 1 | 7 |
++-----------+
+</code></pre>
+
+You can set up filters to work on an initial data set via the Table constructor.
+
+<pre><code>
+>> t = Table(%w[a b c], :data => [[1,2,3],[9,6,1],[11,3,2],[2,1,7]],
+                        :filters => lambda {|r| r.a < 10 })
+>> puts t
++-----------+
+| a | b | c |
++-----------+
+| 1 | 2 | 3 |
+| 9 | 6 | 1 |
+| 2 | 1 | 7 |
++-----------+
+</code></pre>
+
+You can also get back a feeder object from the Table constructor and build up your result set iteratively.
+
+<pre><code>
+>> t = Table(%w[a b c]) do |feeder|
+>>   feeder.filter {|r| r.a < 10 }
+>>   feeder << [1,2,3] << [9,6,1] << [11,3,2] << [2,1,7]
+>> end
+>> puts t
++-----------+
+| a | b | c |
++-----------+
+| 1 | 2 | 3 |
+| 9 | 6 | 1 |
+| 2 | 1 | 7 |
++-----------+
+</code></pre>
+
+Feeders also provide a way to do transformations on your data as it is being collected.
+
+<pre><code>
+>> t = Table(%w[a b c], :data => [[1,2,3],[9,6,1],[11,3,2],[2,1,7]],
+                        :transforms => lambda {|r| r.a = "a: #{r.a}" })
+>> puts t
++---------------+
+|   a   | b | c |
++---------------+
+| a: 1  | 2 | 3 |
+| a: 9  | 6 | 1 |
+| a: 11 | 3 | 2 |
+| a: 2  | 1 | 7 |
++---------------+
+</code></pre>
+
+h3. Summarizing Grouped Data                        
+
+Grouping data by a certain criteria and then making some calculations on the 
+grouped data is a common operation.  Often these problems take the form of 
+"for each person, give me the sum of all 'a' associated with them, 
+and the average of all 'b'".
+
+The following example shows how to use <tt>Grouping#summary</tt> to generate
+this kind of report as a Table from a Grouping object.
+
+<pre><code>
+t = Table(%w[name a b]) 
+t << ["foo",10,20]
+t << ["foo",15,25]
+t << ["bar",5,10]
+t << ["apple",3,10] 
+t << ["bar",19,7]
+
+g = Grouping(t,:by => 'name')
+
+s = g.summary(:name, :a => lambda { |g| g.sigma("a") },
+                     :b_avg => lambda { |g| g.sigma("b").to_f / g.length },
+                     :order => [:name,:a,:b_avg] ) 
+
+>> puts s  
++--------------------+
+| name  | a  | b_avg |
++--------------------+
+| apple |  3 |  10.0 |
+| foo   | 25 |  22.5 |
+| bar   | 24 |   8.5 |
++--------------------+ 
+</code></pre>
+
+h3. Multilevel Grouping
+
+You can create multilevel groupings by providing an array of column names when
+the grouping is created.
+
+<pre><code>
+>> table = Table(%w[a b c d e], :data => [[1,2,3,4,5],[3,4,5,6,7],
+   [1,1,4,5,6],[3,2,4,5,6],[1,2,5,3,2],[1,2,8,9,0]])
+
+>> grouping = Grouping(table, :by => ["a","b"])
+>> puts grouping
+1:
+
++---------------+
+| b | c | d | e |
++---------------+
+| 2 | 3 | 4 | 5 |
+| 1 | 4 | 5 | 6 |
+| 2 | 5 | 3 | 2 |
+| 2 | 8 | 9 | 0 |
++---------------+
+
+3:
+
++---------------+
+| b | c | d | e |
++---------------+
+| 4 | 5 | 6 | 7 |
+| 2 | 4 | 5 | 6 |
++---------------+
+</code></pre>
+
+You can see that Ruport's built-in formatter only shows the output from the first
+level of the resultant grouping. Since the output for multilevel grouping tends
+to be implementation-specific, you'll need to create your own formatter if you
+want to design such a report.
+
+However, Ruport does provide several methods to get at the underlying data in the
+grouping. You can access each of the groups in the grouping using @[]@ with the
+name of the group.
+
+<pre><code>
+>> puts grouping[1]
+1:
+
++---------------+
+| b | c | d | e |
++---------------+
+| 2 | 3 | 4 | 5 |
+| 1 | 4 | 5 | 6 |
+| 2 | 5 | 3 | 2 |
+| 2 | 8 | 9 | 0 |
++---------------+
+</code></pre>
+
+You can access the next level of each grouping with the @subgrouping@ method
+(aliased as @/@) and the name of the group.
+
+<pre><code>
+>> sub = grouping.subgrouping(1)
+>> sub = grouping / 1
+>> puts sub
+1:
+
++-----------+
+| c | d | e |
++-----------+
+| 4 | 5 | 6 |
++-----------+
+
+2:
+
++-----------+
+| c | d | e |
++-----------+
+| 3 | 4 | 5 |
+| 5 | 3 | 2 |
+| 8 | 9 | 0 |
++-----------+
+</code></pre>
+
+The @subgrouping@ method returns a grouping, so you can in turn access the groups
+in the newly created grouping using @[]@ with the name of the group.
+
+<pre><code>
+>> puts sub[2]
+
+2:
+
++-----------+
+| c | d | e |
++-----------+
+| 3 | 4 | 5 |
+| 5 | 3 | 2 |
+| 8 | 9 | 0 |
++-----------+
+</code></pre>
+
+In this manner, you should be able to traverse the levels of your grouping to get
+its data. Formatting it for your report, however, is left to you.
+
+h3. Related Resources / Digging Deeper
+           
+All operations shown here that work on Table objects will work on Group objects
+(but not necessarily on Grouping objects).

@@ -1,0 +1,663 @@
+h2. Tutorial Introduction to Ruport      
+
+h2. Getting Everything Running      
+
+Some folks like to take baby steps as they enter a new technology, others 
+like to dive right in and try to get a sense of the big picture.  Though we'll
+try not to leave anyone behind, this chapter leans towards the deep dive
+approach.  We're going to start by building a real, fully functional report,
+explaining how things work along the way.  
+
+Of course, we'll need to get Ruport installed and running before we can do
+anything at all, so let's take care of that now.
+
+The easiest way to install Ruport is by using
+RubyGems(footnote:http://rubygems.org).
+
+<pre><code>
+  gem install ruport 
+</code></pre>
+
+Associated with the Ruby Reports project, of which Ruport is the core component, is an officially maintained set of tools called ruport-util.  These are components that either don't fit directly into the functionality provided by the core library or are not mature enough to be included in the core of Ruport.  However, for specific needs, they can be very useful.  The package includes support for database connections using Ruby DBI, support for the @rope@ code generation tool, a high level report interface, graphing support, invoicing support, and email support, among others.  The ruport-util package can also be installed via RubyGems.
+
+<pre><code>
+  gem install ruport-util
+</code></pre>
+
+Another associated project is acts_as_reportable, which provides Ruport with the ability to use ActiveRecord for data collection.  You can install the acts_as_reportable gem as follows:
+
+<pre><code>
+  gem install acts_as_reportable
+</code></pre>  
+
+Once Ruport is installed, we can start hacking on a project right away to give
+you a feel for how things work.
+
+h3. The Tattle Project
+
+As a first step in introducing you to Ruport, we're going to construct a simple
+report for the Tattle project(footnote:http://rubyforge.org/projects/tattle).
+Tattle is an application that collects statistics about hardware and software
+being used by the Ruby community. It allows those involved in maintaining
+RubyGems, as well as anyone else, to see collected statistics about the operating
+environment in place on users' computers; things like the RubyGems version, Ruby
+version, operating system, CPU, etc.
+
+The data collected by the Tattle project is voluntarily submitted by individual members of the community.  You can submit your own data by first installing the Tattle application.
+
+<pre><code>
+  gem install tattle
+</code></pre>
+
+Then, to actually submit the information about your operating environment:
+
+<pre><code>
+  tattle
+</code></pre>
+
+Collected statistics can be found on the project's website at http://tattle.rubygarden.org.  Here's an example of what might be submitted when you run the program:
+
+<pre>
+  user_key, 
+  prefix, /usr/local
+  ruby_version, 1.8.5
+  host_vendor, apple
+  ruby_install_name, ruby
+  build, i686-apple-darwin8.8.2
+  target_cpu, i686
+  arch, i686-darwin8.8.2
+  rubygems_version, 0.9.2
+  SHELL, /bin/sh
+  host_os, darwin8.8.2
+  report_time, Tue Jun 19 22:09:54 -0400 2007
+  host_cpu, i686
+  LIBRUBY, libruby-static.a
+  LIBRUBY_SO, libruby.so.1.8.5
+  target, i686-apple-darwin8.8.2
+</pre>
+
+h3. Overview by Example
+
+In order to provide a general overview of Ruport's functionality, we're going create an example report from the Tattle data.  Ruport is perfect for this kind of task, as it involves pulling the collected data from a database, grouping it, and then generating output in a variety of formats, just what we described as Ruport's strengths.
+
+Included with the Tattle project is a Rails application(footnote:http://tattle.rubyforge.org/svn/rails_app) that allows you to display summarized statistics, optionally narrow down the data by field name, and then export the data to XML, CSV, or YAML formats.  The goal of this chapter will be to incorporate a simple report into the application using Ruport's acts_as_reportable module.
+
+The following is a fully functional report that we'll show you how to create in this chapter.  Some background is needed to understand the example, so we'll begin with a high level tour through the various aspects of Ruport.  Then we'll come back to the example and explain it in detail.
+
+<pre><code>
+  def generate_report
+    table = Report.report_table(:all,
+      :only       => %w[host_os rubygems_version user_key],
+      :conditions => "user_key is not null and user_key <> ''",
+      :group      => "host_os, rubygems_version, user_key")
+
+    grouping = Grouping(table, :by => "host_os")
+
+    rubygems_versions = Table(%w[platform rubygems_version count])  
+
+    grouping.each do |name,group|
+      Grouping(group, :by => "rubygems_version").each do |vname,group|
+        rubygems_versions << { "platform"         => name, 
+                               "rubygems_version" => vname,
+                               "count"            => group.length }
+      end
+    end
+
+    sorted_table = rubygems_versions.sort_rows_by("count", :order => :descending)
+    g = Grouping(sorted_table, :by => "platform")
+
+    send_data g.to_pdf,
+      :type         => "application/pdf",
+      :disposition  => "inline",
+      :filename     => "report.pdf"
+  end
+</code></pre>
+
+h3. Ruport's Data Structures
+
+Ruport uses four basic data structures: records, tables, groups, and groupings.  These are all contained in the @Ruport::Data@ module.  Thus, the fully qualified class names are @Ruport::Data::Record@, @Ruport::Data::Table@, @Ruport::Data::Group@, and @Ruport::Data::Grouping@.  When we use the terms record, table, group, or grouping without further qualification, we are referring to these data structures.
+
+You may use any or all of these to construct your report, but the central data structure in Ruport is the table.  Records are used to build up a table, while groups and groupings are used, as the names imply, to group tabular data.  We will save the discussion of groups and groupings until we finish exploring the behavior of tables.
+
+Records are the most basic of the data structures and generally correspond to a row of data from a database, or other base collection of data.  You create them using either an array or hash of data.
+
+<pre><code>
+  a = Ruport::Data::Record.new ["1.8.5","0.9.2","darwin8.8.2"],
+        :attributes => ["ruby_version", "rubygems_version", "host_os"]
+  b = Ruport::Data::Record.new({ :ruby_version => "1.8.5",
+        :rubygems_version => "0.9.2",
+        :host_os => "darwin8.8.2" })
+</code></pre>
+
+In order to access the data, you can use array-like notation @a[1]@, or (provided you supply attribute names) you can use either hash-like or accessor notation @b["ruby_version"]@ or @b.ruby_version@.
+
+Ruport tables are collections of records and as mentioned previously, they form the basis for much of Ruport's functionality.  They also provide a variety of methods for working with the data they contain.  In the next sections of the tutorial, we will demonstrate how to create tables and manipulate their structure and contents.
+
+h3. Manipulating Data
+
+In the final version of our example, we'll use Ruport's acts_as_reportable module to collect some data from the Tattle database, which will allow us to avoid using most of the techniques presented in this section, since we can constrain the data as it is being collected.  However, to demonstrate the capabilities of Ruport in the context of data manipulation, we won't do that yet.  Instead, we'll manually create tables containing the data of interest.  The techniques we demonstrate in this section, however, are generally applicable, regardless of how you collect the data.
+
+First, let's look at the methods supplied by Ruport's Table class.  We'll need to create a table with some of the columns expected for the Tattle data.
+
+<pre><code>
+  table = Table(%w[ruby_version host_vendor build target_cpu arch
+    rubygems_version host_os host_cpu])
+</code></pre>
+
+Then we'll populate it with some data.
+
+<pre><code>
+  table << { "ruby_version"     => "1.8.5",
+             "rubygems_version" => "0.9.2",
+             "host_os"          => "darwin8.8.2" }
+  table << { "ruby_version"     => "1.8.6",
+             "rubygems_version" => "0.9.2",
+             "host_os"          => "darwin8.8.2" }
+</code></pre>
+
+Now let's take a look at a text version of our table.
+
+<pre>
+puts table
+
++----------------------------------------------------------------------------->>
+| ruby_version | host_vendor | build | target_cpu | arch | rubygems_version | >>
++----------------------------------------------------------------------------->>
+| 1.8.5        |             |       |            |      | 0.9.2            | >>
+| 1.8.6        |             |       |            |      | 0.9.2            | >>
++----------------------------------------------------------------------------->>
+</pre>
+
+We'll use this table as the basis to explain some data manipulation techniques offered in Ruport.  First, we probably want to get rid of some of the extra columns containing no data.  You may want to start by finding out what columns exist in the table:
+
+<pre><code>
+  table.column_names
+</code></pre>
+
+produces:
+
+<pre>
+  ["ruby_version", "host_vendor", "build", "target_cpu", "arch",
+  "rubygems_version", "host_os", "host_cpu"]
+</pre>
+
+As you can see, these are the column names we specified when creating the table.  Now you want to try and reduce the columns in the table to just the three we populated: "ruby_version", "rubygems_version", and "host_os".  You can delete columns one at a time with the @remove_column@ method.
+
+<pre><code>
+  table.remove_column("arch")
+  table.remove_column("build")
+</code></pre>
+
+This would obviously be tedious for this job, since we want to remove several columns.  However, it works well if you only have one or two columns to remove.  An improvement would be to use the @remove_columns@ method, which allows you to remove multiple columns at once.
+
+<pre><code>
+  table.remove_columns("arch", "build")
+</code></pre>
+
+Still, with the number of columns we need to remove, you don't really want to list out all the column names.  Since, in this case, we're keeping fewer columns than we're discarding, you can use the @sub_table@ method and specify only the columns you want to keep.  The @reduce@ method (and its alias @sub_table!@) does the same thing, but modifies its receiver in-place.
+
+<pre><code>
+  table = table.sub_table(["ruby_version", "rubygems_version", "host_os"])
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-----------------------------------------------+
+  | ruby_version | rubygems_version |   host_os   |
+  +-----------------------------------------------+
+  | 1.8.5        | 0.9.2            | darwin8.8.2 |
+  | 1.8.6        | 0.9.2            | darwin8.8.2 |
+  +-----------------------------------------------+
+</pre>
+
+That looks much better.  The column names could be nicer, though, so let's change those.  Ruport offers a few different methods for renaming columns in existing tables.  As when removing columns, when renaming columns Ruport gives you both @rename_column@ and @rename_columns@ methods, that allow you to rename one or multiple columns, respectively.
+
+<pre><code>
+  table.rename_column("ruby_version", "Ruby Version")
+  table.rename_columns("rubygems_version" => "RubyGems Version",
+    "host_os" => "Host OS")
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-----------------------------------------------+
+  | Ruby Version | RubyGems Version |   Host OS   |
+  +-----------------------------------------------+
+  | 1.8.5        | 0.9.2            | darwin8.8.2 |
+  | 1.8.6        | 0.9.2            | darwin8.8.2 |
+  +-----------------------------------------------+
+</pre>
+
+You can also change the order of columns.  There are a few methods that can help you to do that.  You can swap the positions of two columns with the @swap_column@ method or do a complete reorder of the column positions using the @reorder@ method.  For now, let's just swap the first and second columns, so that the RubyGems version is listed first.
+
+<pre><code>
+  table.swap_column("Ruby Version", "RubyGems Version")
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-----------------------------------------------+
+  | RubyGems Version | Ruby Version |   Host OS   |
+  +-----------------------------------------------+
+  | 0.9.2            | 1.8.5        | darwin8.8.2 |
+  | 0.9.2            | 1.8.6        | darwin8.8.2 |
+  +-----------------------------------------------+
+</pre>
+
+If you have a column of data that you want to add to the table, maybe something that doesn't exist in your database, you can do that using Ruport as well.  This is generally useful for doing some type of calculation on the existing data, but it can be used to add any data you want, or to just create an empty column for later use.  The @add_column@, @add_columns@, and @replace_column@ methods can all be helpful for doing this.  As an example, let's just add a column of default information to the table.
+
+<pre><code>
+  table.add_column("Host Vendor", :default => "apple")
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-------------------------------------------------------------+
+  | RubyGems Version | Ruby Version |   Host OS   | Host Vendor |
+  +-------------------------------------------------------------+
+  | 0.9.2            | 1.8.5        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.6        | darwin8.8.2 | apple       |
+  +-------------------------------------------------------------+
+</pre>
+
+So far, all of our data manipulations have been focused on columns of data, but you can just as easily work with the individual rows as well.  You can add and remove rows of data based on criteria you specify.  Adding data to the table is as simple as using the @<<@ operator.  You can add arrays, hashes, and Ruport records, among others.  Let's add a few rows of data to the existing table.
+
+<pre><code>
+  table << ["0.9.2", "1.9.0", "darwin8.8.2", "apple"]
+  table << { "RubyGems Version" => "0.9.0", "Ruby Version" => "1.8.5",
+             "Host OS" => "darwin8.8.4", "Host Vendor" => "apple" }
+  table << ["0.9.2", "1.8.5", "linux-gnu", "pc"]
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-------------------------------------------------------------+
+  | RubyGems Version | Ruby Version |   Host OS   | Host Vendor |
+  +-------------------------------------------------------------+
+  | 0.9.2            | 1.8.5        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.6        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.9.0        | darwin8.8.2 | apple       |
+  | 0.9.0            | 1.8.5        | darwin8.8.4 | apple       |
+  | 0.9.2            | 1.8.5        | linux-gnu   | pc          |
+  +-------------------------------------------------------------+
+</pre>
+
+One thing we didn't mention earlier when discussing the use of @sub_table@ is that you can also supply a code block which allows you to limit the number of rows returned.  The block should implement a boolean statement which determines whether a row will be kept in the result set.  For example, you could easily remove the rows for RubyGems version 0.9.0.
+
+<pre><code>
+  table.sub_table! {|row| row["RubyGems Version"] != "0.9.0" }
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-------------------------------------------------------------+
+  | RubyGems Version | Ruby Version |   Host OS   | Host Vendor |
+  +-------------------------------------------------------------+
+  | 0.9.2            | 1.8.5        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.6        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.9.0        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.5        | linux-gnu   | pc          |
+  +-------------------------------------------------------------+
+</pre>
+
+You should now have a general idea of some manipulations you might do on a table using the methods that Ruport supplies.  There are many more that aren't described here, but these are some of the more common techniques for data manipulation.  In the next section, we'll look at how you can group your data using more of Ruport's data structures.
+
+h3. Grouping
+
+Another thing Ruport allows you to do with your data is to group it.  Ruport supplies two data structures to assist in such operations, the group and the grouping. A group, on its own, is marginally useful.  It is basically a table with a name, and inherits from the Table class, so it has all of the capabilities of a Ruport table.  It does add a @name@ attribute that you can use to give the group a name when you create it.
+
+Here is an example of creating a group from the table we were using in the previous section.  A table can convert itself to a group with the @to_group@ method by providing a group name, although the name is optional.
+
+<pre><code>
+  group = table.to_group("RubyGems Versions")
+  puts group
+</code></pre>
+
+produces:
+
+<pre>
+  RubyGems Versions:
+
+  +-------------------------------------------------------------+
+  | RubyGems Version | Ruby Version |   Host OS   | Host Vendor |
+  +-------------------------------------------------------------+
+  | 0.9.2            | 1.8.5        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.6        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.9.0        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.5        | linux-gnu   | pc          |
+  +-------------------------------------------------------------+
+</pre>
+
+As you can see, the output of a group is similar to the output of a table, with the addition of the group name as a heading.
+
+The real power of groups is seen when we use them as components of another Ruport data structure, the grouping.  A grouping is basically a collection of groups.  The data for a grouping is a hash of groups keyed on the group names.  The capabilities of a grouping go beyond what can be done with a group, however.
+
+You can create a grouping from a table (or group).  You can use the constructor or a shortcut Kernel method (Grouping) to achieve the same thing.  The following are equivalent and will both create a grouping from the table we've been using.  We'll use the "Ruby Version" column again, this time to create a grouping instead of a group.
+
+<pre><code>
+  grouping = Ruport::Data::Grouping.new(table, :by => "Ruby Version")
+  grouping = Grouping(table, :by => "Ruby Version")
+  puts grouping
+</code></pre>
+
+produces:
+
+<pre>
+  1.8.5:
+
+  +----------------------------------------------+
+  | RubyGems Version |   Host OS   | Host Vendor |
+  +----------------------------------------------+
+  | 0.9.2            | darwin8.8.2 | apple       |
+  | 0.9.2            | linux-gnu   | pc          |
+  +----------------------------------------------+
+
+  1.8.6:
+
+  +----------------------------------------------+
+  | RubyGems Version |   Host OS   | Host Vendor |
+  +----------------------------------------------+
+  | 0.9.2            | darwin8.8.2 | apple       |
+  +----------------------------------------------+
+
+  1.9.0:
+
+  +----------------------------------------------+
+  | RubyGems Version |   Host OS   | Host Vendor |
+  +----------------------------------------------+
+  | 0.9.2            | darwin8.8.2 | apple       |
+  +----------------------------------------------+
+</pre>
+
+A grouping is defined by a collection of groups at the top level, so the default formatter will output each of the groups in the grouping.  You can group on more than one column by passing an array of column names in the :by option to the constructor.(footnote: See the Data Manipulations cheatsheet for more detail on multilevel groupings.)
+
+The Grouping class offers several methods to work with a grouping, but for now, it's enough to recognize that creating a grouping from a table or group will create a hash of data where each key is a unique data point from the grouping column and each value is a group consisting of the remaining columns and all rows matching the key value in the grouping column.  
+
+This more-or-less covers the key points about data manipulations in Ruport, so
+we can move on now. In the next section, we'll look at how you can use Ruport's
+built-in controllers and formatters to produce formatted output from existing
+data.
+
+h3. Formatting and Rendering
+
+Now that we have some data in a particular structure, the next step is to actually produce some output.  In this section, we describe the basics of creating output from the standard data structures using Ruport's built-in formatters.  Ruport also includes a system for defining your own output formats, and we'll look at that briefly.
+
+Whether you realize it or not, we've actually used Ruport's formatting system already.  That nice-looking text output we've been generating with @puts@ has been formatted and rendered using the built-in text format tools supplied by Ruport.  All the data structures supplied with Ruport have built-in formatters that can create output in a variety of formats (Text, CSV, HTML, and PDF).
+
+With Ruport's data structures, it couldn't be easier to produce output in different formats.  We already used the text format for a Ruport table implicitly when we called @puts table@, but you can achieve the same result with the @to_text@ method.  Similarly, to produce CSV output, you can call the @to_csv@ method (or @to_html@ or @to_pdf@ for the other formats).  Let's output our table in CSV and HTML format to see what you get.
+
+<pre><code>
+  puts table.to_csv
+</code></pre>
+
+produces:
+
+<pre>
+  RubyGems Version,Ruby Version,Host OS,Host Vendor
+  0.9.2,1.8.5,darwin8.8.2,apple
+  0.9.2,1.8.6,darwin8.8.2,apple
+  0.9.2,1.9.0,darwin8.8.2,apple
+  0.9.2,1.8.5,linux-gnu,pc
+</pre>
+
+<pre><code>
+  puts table.to_html
+</code></pre>
+
+produces:
+
+<table>
+  <tr>
+    <th>RubyGems Version</th>
+    <th>Ruby Version</th>
+    <th>Host OS</th>
+    <th>Host Vendor</th>
+  </tr>
+  <tr>
+    <td>0.9.2</td>
+    <td>1.8.5</td>
+    <td>darwin8.8.2</td>
+    <td>apple</td>
+  </tr>
+  <tr>
+    <td>0.9.2</td>
+    <td>1.8.6</td>
+    <td>darwin8.8.2</td>
+    <td>apple</td>
+  </tr>
+  <tr>
+    <td>0.9.2</td>
+    <td>1.9.0</td>
+    <td>darwin8.8.2</td>
+    <td>apple</td>
+  </tr>
+  <tr>
+    <td>0.9.2</td>
+    <td>1.8.5</td>
+    <td>linux-gnu</td>
+    <td>pc</td>
+  </tr>
+</table>
+
+When using the standard data structures, that's all there is to it!  If you don't like the way they look or if you have specific needs, you can define your own formats.  You don't have to do so in order to use Ruport, but soon enough you'll probably encounter a situation where you need to create a customized
+formatter.
+
+h3. Custom Formatting
+
+Ruport's formatting system consists of two components: the controller and the formatter.  The controller defines the steps needed to build the output and the formatter defines the implementation of those steps for one or more output formats.  The following is an example of how you can define another formatter for the table we've been using.  It will output the table in the same text format we've already seen, but add a header.  It's not of much practical use, but will illustrate how to create a custom format.
+
+First, we define the controller with two stages (:header and :table) that we specify with the @stage@ class method.  This will tell the formatters that if methods named @build_header@ and/or @build_table@ are implemented by the formatter, then the controller will call them during the process of creating the output (although neither is required to be present).
+
+Ruport defines a convenient syntax for creating your formatter methods.  You can use the class method @build@ with the name of the stage (e.g. @build :header@) and an associated block that will become the body of the method.  We'll use this syntax throughout the book; however you can get the same effect by defining your own "build_" methods (such as "build_header").
+
+We'll implement the formatter for a format named :text.  The name is essentially arbitrary but it's a good idea to use names that provide some identification of the output being produced.
+
+<pre><code>
+  class TextController < Ruport::Controller
+    stage :header, :table
+  
+    class Text < Ruport::Formatter
+      renders :text, :for => TextController
+    
+      build :header do
+        output << "Example Report\n\n"
+      end
+    
+      build :table do
+        output << data.to_text
+      end
+    end
+  end
+</code></pre>
+
+The line in the formatter, @renders :text, :for => TextController@ names the format and registers itself with the controller as the formatter for that named format.  To create the output, you use the @render@ method.  In fact, all of our previous examples were really shortcuts for the @render@ method.
+
+<pre><code>
+  puts TextController.render(:text, :data => table)
+</code></pre>
+
+or use the shortcut:
+
+<pre><code>
+  puts TextController.render_text(:data => table)
+</code></pre>
+
+produces:
+
+<pre>
+  Example Report
+
+  +-------------------------------------------------------------+
+  | RubyGems Version | Ruby Version |   Host OS   | Host Vendor |
+  +-------------------------------------------------------------+
+  | 0.9.2            | 1.8.5        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.6        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.9.0        | darwin8.8.2 | apple       |
+  | 0.9.2            | 1.8.5        | linux-gnu   | pc          |
+  +-------------------------------------------------------------+
+</pre>
+
+The built-in formatters contain many useful helper methods and it's frequently beneficial to inherit from them rather than directly from @Ruport::Formatter@.  The topic of controllers and formatters will be covered in much more detail later in the book, but you should now have a general understanding of how they work.  As we mentioned, we'll be using the acts_as_reportable module to create the report, so let's take a look briefly at how to use it before getting back to the example.
+
+h3. Loading acts_as_reportable
+
+Ruport has two built-in mechanisms to get the data needed for your report.  First, you can use the Query class contained in ruport-util, which relies on the Ruby DBI library.  Second, you can hook into ActiveRecord using Ruport's acts_as_reportable module, and this second option is what we're going to use in our example.  Basically, acts_as_reportable uses the results of an @ActiveRecord::Base.find()@ to prepare a Ruport data table.
+
+Since we want to use acts_as_reportable to integrate Ruport into a Rails application, we will show you how to install and use it in that context.  You can, however, use acts_as_reportable in any environment as long as ActiveRecord is loaded.  The first thing you need to do is ensure that both Ruport and acts_as_reportable are installed as described above in the Installation section.  Then, the easiest way to hook acts_as_reportable into a Rails project is to load it in the @environment.rb@ file.
+
+<pre><code>
+  require "ruport"
+</code></pre>
+
+Loading Ruport will automatically make the acts_as_reportable module available if ActiveRecord is already loaded, which will be true for a Rails application.  Next, let's see how to use acts_as_reportable to collect some data.
+
+h3. Collecting Data
+
+The first step in any reporting project is to collect the data needed to generate the report.  The data for the Tattle project is kept in a single database table named "reports," and the corresponding ActiveRecord model class is Report.  The first thing we need to do is hook the Report model up to Ruport using acts_as_reportable.
+
+In the simplest form, you just need to add the @acts_as_reportable@ method call to your ActiveRecord model class definition.  This provides your model class with a few Ruport-specific methods to use, the most important being @report_table@, which works generally like an @ActiveRecord::Base.find()@ with a few extra options, but returns a Ruport table.  That allows you to use all of the facilities of Ruport to manipulate and format the generated table.
+
+<pre><code>
+  class Report < ActiveRecord::Base
+    acts_as_reportable
+  end
+</code></pre>
+
+This gives the Report model the ability to collect its data into a Ruport table.  If we assume that the Tattle reports table contains the same data as we populated manually earlier, then we can create a Ruport table using the @report_table@ method and use the :only option to get just the columns we want.
+
+<pre><code>
+  table = Report.report_table(:all,
+    :only => ['ruby_version', 'rubygems_version', 'host_os'])
+  puts table
+</code></pre>
+
+produces:
+
+<pre>
+  +-----------------------------------------------+
+  | ruby_version | rubygems_version |   host_os   |
+  +-----------------------------------------------+
+  | 1.8.5        | 0.9.2            | darwin8.8.2 |
+  | 1.8.6        | 0.9.2            | darwin8.8.2 |
+  +-----------------------------------------------+
+</pre>
+
+There are many other options to constrain the data as you're collecting it using acts_as_reportable, but we'll leave that for later in the book. (footnote: See the acts_as_reportable cheatsheet for more detail.) Once you get your data into one of Ruport's data structures, the acquisition method becomes irrelevant.  Everything else you do with that object will be identical, whether you collect the data using acts_as_reportable or some other method.  This concludes the background information you need to understand the real report we're going to build using the Tattle project data, so now let's do some real work.
+
+h3. Tattle Example Report
+
+We're going to walk through an example of a report generated from the Tattle data.  This report is included in the examples packaged with Ruport (@tattle_rubygems_version.rb@ in the examples directory). There is also a dump of the Tattle database in the examples/data directory.  The example shows how to create the report outside of Rails, but since we want to add it to the Tattle Rails project, we need to change it slightly.
+
+Take a look at the full example again - then we'll go through it with a detailed explanation.  In a Rails setting, the following method should be placed in a controller, in this case @reports_controller.rb@.
+
+<pre><code>
+  def generate_report
+    table = Report.report_table(:all,
+      :only       => %w[host_os rubygems_version user_key],
+      :conditions => "user_key is not null and user_key <> ''",
+      :group      => "host_os, rubygems_version, user_key")
+
+    grouping = Grouping(table, :by => "host_os")
+
+    rubygems_versions = Table(%w[platform rubygems_version count])  
+
+    grouping.each do |name,group|
+      Grouping(group, :by => "rubygems_version").each do |vname,group|
+        rubygems_versions << { "platform"         => name, 
+                               "rubygems_version" => vname,
+                               "count"            => group.length }
+      end
+    end
+
+    sorted_table = rubygems_versions.sort_rows_by("count", :order => :descending)
+    g = Grouping(sorted_table, :by => "platform")
+
+    send_data g.to_pdf,
+      :type         => "application/pdf",
+      :disposition  => "inline",
+      :filename     => "report.pdf"
+  end
+</code></pre>
+
+Let's look more closely at each part of the code to see how it works.  First, look at the line:
+
+<pre><code>
+  table = Report.report_table(:all,
+    :only       => %w[host_os rubygems_version user_key],
+    :conditions => "user_key is not null and user_key <> ''",
+    :group      => "host_os, rubygems_version, user_key")
+</code></pre>
+
+As we saw earlier, the @report_table@ method uses acts_as_reportable to build a Ruport table from an ActiveRecord @find@.  It can use all of the options available to @find@ to customize the data set.  We use the :conditions and :group options that just get passed along to the @find@ method, Ruport has no awareness of them.  In this case, we look for a user_key that is not null or empty and we group the data on the host_os, rubygems_version, and user_key columns.
+
+So that leaves the :only option, which is an option that Ruport uses.  When passed a column name or array of column names, it tells Ruport to only return those columns.  When using acts_as_reportable, this is a more efficient way to limit the columns in a table, rather than the techniques we showed earlier to eliminate columns after we have the full table.  Either way would work, though.
+
+We now have a Ruport table to work with.  The table contains all of the Tattle data that has a user key, with only the columns host_os, rubygems_version, and user_key.  Next, we want to do some grouping of the data.
+
+We create a Ruport grouping from the data table with the next line.  This will group all of the data by the @host_os@ column.
+
+<pre><code>
+  grouping = Grouping(table, :by => "host_os")
+</code></pre>
+
+We want to do some more complicated grouping in this case, but in order to do so, we need to take another pass through the data.  We set up an empty table to hold our final data - we'll add rows later as we do the final grouping.  We can create an empty table using the shortcut that Ruport supplies:
+
+<pre><code>
+  rubygems_versions = Table(%w[platform rubygems_version count])  
+</code></pre>
+
+Next, we take another pass through the grouping we created earlier:
+
+<pre><code>
+  grouping.each do |name,group|
+    Grouping(group, :by => "rubygems_version").each do |vname,group|
+      rubygems_versions << { "platform"         => name, 
+                             "rubygems_version" => vname,
+                             "count"            => group.length }
+    end
+  end
+</code></pre>
+
+For each group, we create another grouping by the @rubygems_version@ column.  This will give us groups of user keys where each group is a single host OS and RubyGems version.  We want to use this information to fill in our empty table.  The "platform" column is populated with the "host_os" data from the first grouping.  The "rubygems_version" column gets the data from the second grouping.  Finally, the "count" column is populated with the length of the group, which is the number of rows in each group.  The final table, therefore, contains a listing of each unique combination of platform and RubyGems version with a count of their instances in the database.
+
+Finally, we sort the data and do one last grouping.  We want to see a list of platforms with the RubyGems versions used on that platform sorted in descending order by count.
+
+<pre><code>
+  sorted_table = rubygems_versions.sort_rows_by("count", :order => :descending)
+  g = Grouping(sorted_table, :by => "platform")
+</code></pre>
+
+The first line sorts the table by count in descending order using Ruport's @sort_rows_by@ method.  This method can take a column name, array of column names, or code block to define how to do the sort.  In this case, we use the column name "count" and tell Ruport to sort descending using the :order option.
+
+We finally group the sorted table by platform.  This gives us the final grouping that we want to output.  We can output the grouping in any of the standard formats we described earlier, but in this case we want to provide a PDF.
+
+<pre><code>
+  send_data g.to_pdf,
+    :type         => "application/pdf",
+    :disposition  => "inline",
+    :filename     => "report.pdf"
+</code></pre>
+
+We generate the pdf using the @to_pdf@ method and then output the file using Rails' @send_data@ method to send binary data to the user.
+
+The output will look something like this:
+
+<img src="tattle.png" />
+
+Overall, this example shows the general steps you'll use frequently with Ruport: collect the data, manipulate it in some way (in this case, grouping and sorting), and then render the data to output.  This is what Ruport was designed to do.  Of course, many examples might require more complicated formatting than what we used here and the details of data collection and manipulation will vary, but the basic flow will be the same.  
+
+In the sections to come, we'll look at Ruport in more detail, digging into each of its components to show you all of their capabilities.  Don't worry if you're
+still working on catching up on the concepts introduced in this chapter, you'll
+see them all again as we go through the main discussion of PayR.

@@ -1,0 +1,277 @@
+h2. Cheatsheet: Building Custom Printable Documents
+
+The built-in support for PDF output may get you where you need for simple
+reports, but most of the time, your printable documents will need some
+customizations.  This cheatsheet is based on the most common questions our users
+have when building PDF reports.
+
+h3. Displaying Multiple Tables in a Single PDF 
+
+Making a multi-table PDF is easy, you just need to build your own controller and
+formatter. Every time we say that, people cringe with fear, but have a look at
+this example to see that there is nothing to be afraid of:
+
+<pre><code>
+
+class MultiTableController < Ruport::Controller
+
+  stage :multi_table_report
+
+  class PDF < Ruport::Formatter::PDF
+
+    renders :pdf, :for => MultiTableController
+
+    build :multi_table_report do
+      data.each { |table| pad(10) { draw_table(table) } }
+      render_pdf
+    end
+
+  end
+
+end
+
+t1 = Table(%w[a b c]) << [1,2,3] << [4,5,6]
+t2 = Table(%w[a b c]) << [7,8,9] << [10,11,12]
+
+pdf = MultiTableController.render_pdf(:data => [t1,t2])
+
+</code></pre>
+
+The resulting PDF looks like this:
+
+<img src="simple.png"/>
+
+Using custom formatters opens up a whole lot of doors, as you'll have access 
+to the full range of formatting helper functions Ruport offers.
+
+h3. Custom Headers with Logos
+
+Often you'll need to include a company logo, some formatted text, and possibly
+other decorations in your reports.  The following chunk of code shows how to do
+exactly that, making use of a number of Ruport's features.
+
+<pre>
+  def build_standard_report_header
+    pdf_writer.select_font("Times-Roman") 
+ 
+    options.text_format = { :font_size => 14, :justification => :right } 
+ 
+    add_text "<i>Rinara Productions</i>, <i>#{options.report_title}</i>" 
+    add_text "Generated at #{Time.now.strftime('%H:%M on %Y-%m-%d')}" 
+ 
+    center_image_in_box "ruport.png", :x => left_boundary,  
+                                      :y => top_boundary - 50, 
+                                      :width => 275, 
+                                      :height => 70 
+ 
+    move_cursor_to top_boundary - 80 
+ 
+    pad_bottom(20) { hr } 
+ 
+    options.text_format[:justification] = :left 
+    options.text_format[:font_size] = 12
+  end
+</pre>
+
+This outputs a header which looks like this:
+
+<img src="header.png">
+
+h3. Creating a Standard Report Template
+
+Often, you'll want to reuse these standard report elements, and the easiest way
+to do this is to encapsulate these stages in a module, and then include them into
+your formatter.  The follow extended example shows how two different controllers 
+can reuse the same header code and finalization hook.
+
+<pre><code>
+module StandardPDFReport
+
+  def build_standard_report_header
+    pdf_writer.select_font("Times-Roman")
+
+    options.text_format = { :font_size => 14, :justification => :right }
+
+    add_text "<i>Rinara Productions</i>, <i>#{options.report_title}</i>"
+    add_text "Generated at #{Time.now.strftime('%H:%M on %Y-%m-%d')}"
+
+    center_image_in_box "ruport.png", :x => left_boundary, 
+                                      :y => top_boundary - 50,
+                                      :width => 275,
+                                      :height => 70
+
+    move_cursor_to top_boundary - 80
+
+    pad_bottom(20) { hr }
+
+    options.text_format[:justification] = :left
+    options.text_format[:font_size] = 12
+  end
+
+  def finalize_standard_report
+    render_pdf
+    pdf_writer.save_as(options.file)
+  end
+
+end
+
+class DocumentController < Ruport::Controller
+
+  stage :standard_report_header, :document_body
+  finalize :standard_report
+
+end
+
+class TableController < Ruport::Controller
+
+  stage :standard_report_header, :table_body
+  finalize :standard_report
+
+end
+
+class FormatterForPDF < Ruport::Formatter::PDF
+
+  renders :pdf, :for => [DocumentController, TableController]
+
+  include StandardPDFReport
+
+  build :document_body do
+    add_text "Lorum, Ipsum Blah Blah...\n" * 25
+  end
+
+  build :table_body do
+    draw_table(data)
+  end
+
+end
+</code></pre>
+
+Using the above definitions, the following sample usages generate PDFs which
+look like the images shown below.
+
+<pre><code>
+DocumentController.render_pdf( :file => "foo.pdf",
+                             :report_title => "Sample Document" )
+</code></pre>
+
+<img src="foo.png"/>
+
+<pre><code>
+t = Table(:column_names => %w[col1 col2 col3 col4],
+          :data => [%w[lorum ipsum blah blah]] * 20)
+
+TableController.render_pdf( :file => "bar.pdf",
+                          :report_title => "Sample Table Report",
+                          :data => t )
+</code></pre>
+
+<img src="bar.png"/>
+
+Although this implementation uses the same formatter for both controllers, there
+is no need to do that.  Including the StandardPDFReport module would
+work for any PDF formatter subclass.
+
+h3. Generating Page Headers
+
+If you are generating a report which has tables that do not exceed one page, or
+data that can be generated on a page by page basis, page headers can simply be
+drawn using @add_text@ / @draw_text@ much like the way the document headers were
+drawn in the previous example.
+
+However, if you have information which must be repeated on each page, and you
+don't have control over the document flow, things are somewhat more complicated.
+@PDF::Writer@ does not have any real support for drawing content on all pages.
+However, Ruport *does* have limited support for this, via the @pdf-helpers@
+plugin.
+
+To install the plugin, do:
+
+<pre><code>
+  gem install pdf-helpers --source http://gems.rubyreports.org
+</code></pre>
+
+The following example shows how to use the <tt>all_pages</tt> callback added by
+@pdf-helpers@ to draw in page headers and footers.  You'll notice a few
+less than pleasant things about this:
+
+ * You need to adjust the margins and then draw headers / footers in them
+ * You need to use Ruport's <tt>draw_text!</tt> method
+ * You need to register these callbacks *before* rendering your table
+
+<pre><code>
+require "ruport"
+require "ruport/extensions"
+
+class AllPagesController < Ruport::Controller
+
+  stage :long_report
+  required_option :file
+
+  class PDF < Ruport::Formatter::PDF
+
+    renders :pdf, :for => AllPagesController
+
+    build :long_report do
+      prepare_long_report
+      draw_table Table(%w[a b c], :data => [[1,2,3]]*100)
+      render_pdf
+    end
+
+    def prepare_long_report
+      apply_long_report_page_header
+      apply_long_report_page_footer
+    end
+
+    def apply_long_report_page_header
+      pdf_writer.top_margin = 50
+      all_pages {
+        draw_text! "This is my header text", :x1 => 100, :y => top_boundary + 15
+      }
+    end
+
+    def apply_long_report_page_footer
+      pdf_writer.bottom_margin = 75
+      all_pages {
+        draw_text! "This is my footer text", :x1 => 500, :y => 15
+      }
+    end
+  
+  end
+
+end
+
+AllPagesController.render_pdf(:file => "long.pdf")
+</code></pre>
+
+Hopefully, nicer support for this will some day be available.  For now, even
+though it is painful, it is at least possible to accomplish this.
+
+h3. Making Your PDFs Display Properly in Rails
+
+Though this is really a Rails matter and not a Ruport matter, it comes up very
+often.  If you want to have your controller properly hand back a PDF for
+download, you should use <tt>send_data</tt>.  In its most simple form, your
+controller code might look something like this:
+
+<pre><code>
+pdf = LabelGenerator.render_pdf(:data => user_addresses)
+
+send_data pdf, :type => "application/pdf",
+               :filename => "mailing_labels.pdf"
+</code></pre>
+
+Consult your favorite Rails documentation resource for further information.
+
+h3. Related Resources / Digging Deeper
+
+There are a wide range of PDF helpers provided by @Formatter::PDF@, so
+taking a quick look at the API documentation should be helpful.  Many functions,
+such as <tt>add_text</tt> and <tt>draw_table</tt>, expose a large number of
+features by forwarding options directly to @PDF::Writer@.
+
+For more complex PDF operations, you may find the <a href="http://stonecode.svnrepository.com/ruport/trac.cgi/wiki/PdfProxy">pdf_writer_proxy</a>
+plugin helpful.
+
+Also, in ruport-util, you'll find PDF Invoice support and some drawing helpers
+for generating printable forms.  More tools are constantly being added, so keep
+an eye out for new stuff in the future.

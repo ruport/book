@@ -1,0 +1,305 @@
+h2. Cheatsheet: Integration Hacks     
+
+Ruport itself is a very simple core system.  A lot of its power comes from how
+easy it is to integrate with other software.  Sometimes you may just want to 
+access a couple advanced features from one of our dependencies. Other times, 
+you may be wrapping a complex legacy reporting system.  This cheatsheet shows
+a few ways to get Ruport working alongside other code without pain.
+
+h3. Squeezing More Out of Our Dependencies   
+
+Ruport tries to make its dependencies easily accessible, especially FasterCSV 
+and @PDF::Writer@.  Much of what you can do with these libraries, you can access 
+through Ruport's API.
+
+Still, if you have pre-written FasterCSV or @PDF::Writer@ code, you're probably
+looking for some shortcuts to avoid rewriting that code.  We'll look at two
+plugins that help you do exactly that.
+
+h4. Using Ruport's Formatters for FasterCSV Tables and Rows
+
+If you've already been using @FasterCSV::Table@ for your data manipulations, and
+you just want to make use of Ruport for your formatted output, it's a piece of 
+cake with fcsv_formatter.
+
+You'll need to grab the plugin first:
+
+<pre>
+  gem install fcsv_formatter --source http://gems.rubyreports.org
+</pre>
+
+Below is a slightly modified example from the FasterCSV 1.2.0 source that 
+shows that formatting tables 'just works'.
+                    
+<pre>
+require "ruport"
+require "ruport/extensions"
+
+table = FCSV.parse(DATA, :headers => true, :header_converters => :symbol)
+
+table << %w[james gray 30]
+table[-1].fields  #=> ["james", "gray", "30"]
+
+table[:type] = "name"
+
+table[:ssn] = %w[123-456-7890 098-765-4321]
+table[:ssn]  #=> ["123-456-7890", "098-765-4321", nil]
+
+puts table.as(:text)    
+
+__END__
+first_name,last_name,age
+zaphod,beeblebrox,42
+ara,howard,34
+</pre>
+
+Outputs:
+
+<pre>     
+	+-----------------------------------------------------+
+	| first_name | last_name  | age | type |     ssn      |
+	+-----------------------------------------------------+
+	| zaphod     | beeblebrox | 42  | name | 123-456-7890 |
+	| ara        | howard     | 34  | name | 098-765-4321 |
+	| james      | gray       | 30  | name |              |
+	+-----------------------------------------------------+
+</pre>
+
+This is just using Ruport's table controller, so you can also use the built in
+PDF, CSV, and HTML formats.  Any additional formatters you attach to the table
+controller will also be detected.
+
+@FasterCSV::Row@ objects can be formatted as well:
+
+<pre>
+puts table[0].as(:text)
+=> "| zaphod | beeblebrox | 42 | name | 123-456-7890 |"
+</pre>     
+
+If you need grouping support, you can explicitly transform a @FasterCSV::Table@
+to a @Ruport::Data::Table@ by calling <tt>table.renderable_data</tt>.
+
+h4. Bonus Side Effect: Good Performance
+
+It turns out that FasterCSV is quite a bit faster for loading CSV files than
+Ruport is.  This is mainly because Ruport offers some different behaviors at
+load time, and also uses FCSV under the hood.  If you've got straightforward
+needs, you might use this plugin to speed up your report generation with large
+files.
+
+h4. Quickly Wrapping @PDF::Writer@ Code with <tt>pdf_writer_proxy</tt>    
+
+If you're needing to do a lot of custom PDF work or you're wrapping some 
+existing @PDF::Writer@ code with Ruport, the <tt>pdf_writer_proxy</tt> will
+surely be helpful.
+
+<pre>
+  gem install pdf_writer_proxy --source http://gems.rubyreports.org
+</pre>
+
+Here is a basic example from the @PDF::Writer@ sources:
+
+<pre> 
+	pdf = PDF::Writer.new
+	pdf.select_font "Times-Roman"
+	pdf.text "Chunky Bacon!!", :font_size => 72, :justification => :center
+
+	i0 = pdf.image "../images/chunkybacon.jpg", :resize => 0.75
+	i1 = pdf.image "../images/chunkybacon.png", :justification => :center, :resize => 0.75
+	pdf.image i0, :justification => :right, :resize => 0.75
+
+	pdf.text "Chunky Bacon!!", :font_size => 72, :justification => :center
+
+	pdf.save_as("chunkybacon.pdf")   
+</pre>     
+
+Wrapping it with Ruport and changing it a tiny bit, you get this:
+
+<pre>
+  require "ruport"
+  require "ruport/extensions"
+
+  class ChunkyController < Ruport::Controller
+
+    stage :bacon
+    required_option :file
+
+    class PDF < Ruport::Formatter::PDF
+
+      renders :pdf, :for => ChunkyController
+
+      proxy_to_pdf_writer
+
+      build :bacon do
+        options.text_format = { :font_size => 72, :justification => :center }
+
+        select_font "Times-Roman"
+        add_text "Chunky Bacon"
+
+        i0 = image "chunkybacon.jpg", :resize => 0.75
+        image "chunkybacon.png", :justification => :center, :resize => 0.75
+        image i0, :justification => :right, :resize => 0.75
+
+        add_text "ChunkyBacon"
+
+        save_as(options.file)
+      end
+
+    end
+  end
+
+  ChunkyController.render_pdf(:file => "chunkybacon.pdf")
+</pre>
+
+You'll notice that the core of the report is quite similar, and is directly
+using some @PDF::Writer@ calls.  Most @PDF::Writer@ methods will "just work" as
+the plugin just forwards all requests it doesn't understand to the underlying
+<tt>pdf_writer</tt> object in the formatter.
+
+In certain cases, Ruport's method names conflict with the @PDF::Writer@ names.
+For example, if you are looking to use @PDF::Writer#add_text@ rather than Ruport's
+you'd need to type <tt>pdf_writer.add_text</tt> explicitly.
+
+Otherwise, this is typically a very fast way to extend your formatter so it 
+can use the full @PDF::Writer@ tool belt.
+
+h3. Playing Nice with Third-Party Code
+
+A lot of times, you'll want to bend Ruport for your own needs, or mallet it 
+into some other system.  We try to make it as easy as possible for you to do
+this.
+
+h4. Wrapping Business Logic with Custom Record Classes
+
+Usually when you're dealing with data processing, you'll need to apply
+some custom calculations or manipulations.
+
+The following example generates total sale prices for a series of items with
+different prices and quantities:
+
+<pre>
+  require "rubygems"
+  require "ruport"
+
+  class Sale < Ruport::Data::Record 
+
+     TAX = 0.06
+
+     def total_sale
+        price.to_f * quantity.to_f * (1 + TAX)
+     end    
+
+  end  
+
+  puts Table(:string => DATA, :record_class => Sale).sum(:total_sale) #=> 1288.589
+
+  __END__
+  item,price,quantity
+  apple,1.05,3
+  banana,1.25,10
+  kitten,12,100
+</pre> 
+
+The <tt>:record_class</tt> does not technically need to be a child of
+Ruport::Data::Record, though that's the general assumption.  You may find that
+a suitably duck typed object will work just as well.
+
+h4. Reporting Against Arbitrary Data Structures     
+
+You might find yourself dealing with a number of structures that are fairly 
+easy to convert to Ruport's data model but would like to avoid copious calls
+that look like <tt>my_data.to_table.as(:html)</tt>.
+
+To remedy, you can use <tt>Controller::Hooks</tt>.
+
+The following example shows how to use our table controller for Ruby's Matrix 
+class:
+
+<pre>
+  require "ruport"
+  require "matrix"
+
+  class Matrix
+
+    include Ruport::Controller::Hooks 
+
+    renders_as_table
+
+    def renderable_data(format)
+      to_a.to_table
+    end  
+
+    def to_s
+      as(:text)
+    end 
+
+  end
+
+  puts Matrix[[1,2,3],[4,5,600]]
+</pre>
+
+Outputs:
+
+<pre>
+  +-------------+
+  | 1 | 2 |   3 |
+  | 4 | 5 | 600 |
+  +-------------+
+</pre>
+ 
+Shortcuts are also defined for the other controllers:
+<tt>renders_as_group</tt>, <tt>renders_as_grouping</tt>, and 
+<tt>renders_as_row</tt> are all available.
+
+If you're using ruport-util, you also have <tt>renders_as_graph</tt>.
+
+The way these hooks work is actually very simple, the <tt>as()</tt> call just
+sets your <tt>:data</tt> attribute to the result of <tt>renderable_data(format)</tt>, and passes along any options to the controller.
+
+You can use your own custom controllers, too, via the <tt>renders_with</tt>
+command.
+
+h4. Extending or Modifying Ruport with gem_plugin 
+
+If you're using some of the techniques listed in this cheatsheet, you may
+want to make your modifications just snap into Ruport whenever they're installed
+without having to explicitly require them.  This is how the plugins we showed
+work, and is extremely easy to do.                                        
+
+In order for <tt>require "ruport/extensions"</tt> to discover your plugin, 
+you simply need to have your gem depend on both ruport and gem_plugin.
+
+Then, at <tt>lib/my_app/init.rb</tt>, you should have an initialization similar
+to this code:   
+
+<pre>
+  class RuportInvoiceLoader < GemPlugin::Plugin "ruport/invoice"
+     require 'invoice'
+     # or other setup stuff here.  
+  end
+
+  # here you can define more classes, reopen stuff, 
+  # do normal ruby, whatever, or stick things in other files.  
+</pre>
+
+The string passed to @GemPlugin::Plugin@ is just a unique identifier for your 
+plugin, which you probably will not need.
+
+That's really it!  Any code you include in that file or require from within it
+will be auto-detected and loaded alongside any other plugins installed when
+a user includes <tt>require "ruport/extensions"</tt> in their code.
+
+Because this involves autoloading, we recommend against breaking behavior in
+the core library via plugins.  Extensions are welcome though!
+
+h3. Related Resources / Digging Deeper                                       
+
+<tt>Controller::Hooks</tt> can be incredibly handy when used alongside custom
+controllers, as they allow you to keep your transformations close to your
+actual data structures and quickly convert various objects into standard forms
+so controllers can be reused readily. You'll want to review the Controller Logic
+cheatsheet (footnote: See Controller Logic cheatsheet.) for some ideas.
+
+A comprehensive set of plugin instructions is available at:
+http://stonecode.svnrepository.com/ruport/trac.cgi/wiki/RuportPluginSystem
+
