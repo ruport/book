@@ -1,0 +1,19 @@
+<!DOCTYPE book PUBLIC '-//OASIS//DTD DocBook XML V4.4//EN' 'http://www.oasis-open.org/docbook/xml/4.4/docbookx.dtd'><book>
+  <!-- Reference new files using XIncludes (not entities): http://www.sagehill.net/docbookxsl/ModularDoc.html#UsingXinclude -->
+  <!-- Each file should have a DOCTYPE at the top of it so you can validate it alone (just like this but with a chapter/preface instead of book-->
+  <!-- Remember, using XIncludes means that you'll have to add a flag (typically 'xinclude' with one or two dashes) when using XML processors/parsers -->
+  <!-- Validate with xmllint as follows (Basic setup same as libxslt: http://www.sagehill.net/docbookxsl/InstallingAProcessor.html)-->
+  <!-- (please collapse dashes in the line beloew) -->
+  <!-- $ xmllint - -xinclude - -noout - -postvalid book.xml -->
+
+<title>The Ruport Book</title>
+
+<bookinfo><edition>2</edition>
+<authorgroup>
+<author><firstname>Gregory</firstname><surname>Brown</surname></author>
+</authorgroup>
+</bookinfo>
+<xi:include href='ch_foreword.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_preface.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch1.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+</book>
