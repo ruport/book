@@ -73,7 +73,7 @@ with your copy.  The licensing terms are available at:
 Even still, if you like the book, we ask that you support the project in one way
 or another.  The easiest way to do this is buy a PDF or printed copy from 
 ruportbook.com.   When you do this, 25% of our revenue goes to a worthwhile
-charity, Engineers Without Borders* (footnote: http://www.ewb-usa.org/), while
+charity, Engineers Without Borders footnote:[http://www.ewb-usa.org/], while
 the rest goes to supporting the folks who have made this book possible.
 
 If you'd prefer the micro-payment approach, you can also offer up donations of

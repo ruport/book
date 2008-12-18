@@ -1,0 +1,356 @@
+== Working With Ruport ==
+
+In the introduction, you saw that Ruport provides the raw materials to make quick
+work of simple reports. This is great, but there's probably a Perl hacker or two
+in the crowd wondering what the big deal is. For ad-hoc reporting, Ruport's
+strength is primarily that it is more convenient than dealing directly with the
+underlying libraries it wraps. This kind of convenience is nice, but wouldn't be
+worth writing a book about if it were all we had to offer.
+
+Ruport is really about fitting reporting functionality into wherever it is 
+needed, not just where it is convenient to do so. Often, this means integration 
+with some overarching business application.  If you've experienced the 
+disgusting rat's nest that is 'reporting gone wrong' first hand, you'll know 
+exactly what we mean when we say that some consistency and general 
+organization is a valuable commodity.
+
+Still, we can't afford to be _too_ opinionated in the realm of reporting, so we
+don't try.  Virtually all conventions you'll find in Ruport are entirely
+optional, and we think you'll find it easy to find another path that works well
+for you even if it's not the one that's most common.
+
+We're now going to embark on the discussion which forms the core of the book,
+and that is a blow-by-blow commentary of Ruport in action within one of the
+applications which helped shape the toolset itself.  This system is a simple
+payroll application, which throughout its short lifetime has migrated from the
+console to Camping footnote:[http://camping.rubyforge.org] and finally came to rest as a Rails 2.0 app.
+
+Though we won't be covering every single step that was involved in creating
+this application, we will show all the interesting bits and use them as
+entry points for further investigation as to how Ruport is used by its 
+developers. This will hopefully help you approach many different problems in
+your own work.             
+
+The book is actually based off of a somewhat simplified version of our actual
+production system, which has been modified a bit to make it more suitable for 
+teaching Ruport.  If you'd like to download it and work with it as you
+read along, the code is available at:
+
+  http://rubyforge.org/projects/payr
+
+=== Introducing PayR: A Simple Payroll System Using Ruport and Rails ===
+
+PayR is your classic in-house application.  It's a little rough around the edges,
+the UI is simple and basic, the feature set is exactly what the users need,
+and nothing more.  If we were to make up a requirements list for the application,
+it might look something like this:
+
+    - Record daily clock-in / clock-out times for employees
+    - Record vacation, sick, personal and holiday time
+    - Produce printable time sheets for each pay period
+    - Produce a 'call-in sheet' time summary report grouped by employee type
+    - Allow managers to see who is clocked in at a glance
+    - Display the current week's time sheet when a user logs in
+    - Track and report annual usage of vacation and personal times 
+    - Produce auditing reports with access times and IP addresses    
+    
+Of course, this isn't a list of every single feature we needed, but it pretty
+much covers the fundamentals.  Though a payroll system isn't quite a 
+reporting application, it's easy to see that a lot of this functionality 
+does involve generating and producing reports. 
+
+=== Ruport: Silly Putty for Reporting ===
+
+The great strength of Ruport is its overall flexibility and willingness to fit
+into pretty much any place you want to put it.  Some of the reports in PayR
+are absolutely trivial and you can easily inline them in a controller method.
+
+As a quick example, take a look at our +clocked_in_report+ code for our
+manager panel.
+
+------------------------------------------------------------------------------------------------------
+  def clocked_in_report 
+    @table = RegularTime.report_table(:all, 
+      :conditions => ["end_time is NULL"], 
+      :only => ["employee.name", "start_time"],
+      :include => { :employee => { :methods => "name", :only => {}} } )
+    unless @table.empty?  
+      @table.rename_column("employee.name", "Employee")    
+      @table.rename_columns { |c| c.titleize }  
+    end
+  end 
+------------------------------------------------------------------------------------------------------ 
+
+The interesting bits of the view look something like this:
+
+------------------------------------------------------------------------------------------------------
+<h2>These users are currently clocked in</h2>
+
+<%= @table.empty? ? "None Right Now" : @table.to_html %>
+------------------------------------------------------------------------------------------------------    
+
+You end up with a simple HTML report that pulls times for employees who haven't
+clocked out yet, as well as their names.
+
+image:/Users/chenoa/devel/ruport_book/manuscript/images/payr_intro_screen1.png[]
+
+Admittedly, the equivalent code using nothing but Rails wouldn't be much more
+complicated.  However, it's worth asking what happens when you want to also 
+support other formats, when you add new methods to an association, or change
+the associated model entirely.  Ruport allows you to easily accommodate 
+changes as needed without complicating your reporting process.  Of course,
+this really starts to shine through as things get more complex.   
+                           
+=== Generate a PDF Before Your Database is Even Initialized ===
+
+Using acts_as_reportable to handle your tabular data opens up a lot of
+doors and really makes things easy to extend and change down the line as 
+needed. This is principally because it standardizes your data so that Ruport can
+be blissfully ignorant of where it actually came from.
+
+To get a sense of this, we can take a quick look at some of PayR's timesheet 
+generation code, specifically the PDF formatter:
+                           
+------------------------------------------------------------------------------------------------------
+class PDF < Ruport::Formatter::PDF
+  
+  renders :pdf, :for => TimeSheet
+  
+  build :time_sheet do              
+     pad_top(50) { 
+       add_text "Timesheet for #{data.employee} (#{start_date} - #{end_date})"
+     }   
+     
+     pad(20) do
+        draw_table data.week1_data 
+        show_overtime(data.week1_overtime)
+     end   
+                               
+     draw_table data.week2_data      
+     
+     show_overtime(data.week2_overtime)
+     
+     render_pdf
+  end   
+  
+  def show_overtime(time)       
+     if time                    
+       pad(5) { add_text "Overtime for week: #{time}", :font_size => 10  }
+     end
+  end       
+  
+end
+------------------------------------------------------------------------------------------------------
+
+In this case, we're working with a somewhat more complicated data container,
+but in the example above, +data.week1_data+ and 
++data.week2_data+ are +Ruport::Data::Table+ objects.  When we use
+the PDF formatter's +draw_table+ method, it generates nice PDF tables like this:
+
+image:/Users/chenoa/devel/ruport_book/manuscript/images/payr_intro_screen2.png[]
+
+Here's the interesting thing about this formatting code:  we wrote it
+long before we even had our Rails app up and running.  In Ruport, there is 
+absolutely no difference between the data structure returned by 
++SomeActiveRecordModel.report_table()+ and +Table("some.csv")+.
+
+This is quite powerful, and we tend to use it readily in our day-to-day work.
+If a client has some sense of how a report should look, we happily ask them to
+pull up Excel and mock out some data for us.  We can then use that to start
+working on formatted reports before we even have a database populated.  This
+leads to the great feeling of already having some useful functionality before we
+even work on the basic CRUD stuff for an application.
+
+Let's take a quick look at a possible mock data object for this report:
+
+------------------------------------------------------------------------------------------------------
+class MockTimeSheet
+
+  include Ruport::Controller::Hooks
+  renders_with TimeSheet
+  
+  def initialize(options={}) 
+    @employee = "Gregory Gibson"  
+    @week1_data = Table(options[:week1_data]) 
+    @week2_data = Table(options[:week2_data]) 
+    @week1_overtime = nil
+    @week2_overtime = 10 
+  end        
+  
+  attr_reader :employee, :week1_data, :week2_data, 
+              :week1_overtime, :week2_overtime
+  
+end     
+------------------------------------------------------------------------------------------------------           
+
++Controller::Hooks+ allow you to tie your regular old Ruby objects to
+Ruport's formatting system. They provide the following shortcut:
+
+------------------------------------------------------------------------------------------------------
+
+MyController.render_pdf(:data => my_obj, :file => "my.pdf")
+
+# becomes
+
+my_obj.save_as("my.pdf")
+
+------------------------------------------------------------------------------------------------------
+
+Beyond this, they provide some functionality for transforming data and
+doing format-specific adjustments, though for our needs, we don't need that
+kind of magic footnote:[If you're interested, consider checking out the custom controller
+logic cheatsheet.].
+
+It's also not important here to know how the real +TimeSheet+ controller 
+works, but you can of course check it out in PayR's source.  Usually in the 
+prototyping phase, the controller might look very simple:
+
+------------------------------------------------------------------------------------------------------
+class TimeSheet < Ruport::Controller
+  stage :time_sheet    
+  
+  module Helpers
+     def start_date
+       Date.today
+     end
+     
+     def end_date
+       Date.today + 14.days  
+     end
+  end
+end
+------------------------------------------------------------------------------------------------------
+
+Believe it or not, combined with the PDF formatter we've shown here and the
++MockTimeSheet+ object, you have a functional report.  To test it out, try this:
+
+------------------------------------------------------------------------------------------------------
+  @timesheet = MockTimeSheet.new(:week1_data => "week1.csv",
+                                 :week2_data => "week2.csv")  
+  @timesheet.save_as("timesheet.pdf")
+------------------------------------------------------------------------------------------------------
+
+You can pretty much populate the CSV files with whatever data you'd like.  If
+you have some nice data from your client to work with, use that.  
+If you don't have data yet, just populate it with some junk, the real goal is 
+just to get something on the screen as fast as possible.
+
+When you run this mocked-out report, it doesn't look particularly pretty, but
+you can see all the key elements are there:
+
+image:/Users/chenoa/devel/ruport_book/manuscript/images/payr_intro_screen3.png[]
+            
+Rather than doing your stylistic tweaking directly in the formatter, it's 
+usually recommended to use Ruport's templates.  These let you externalize
+the look-and-feel components of your report and re-use them as needed. We 
+will cover these in-depth later on in the discussion, but for now, rest
+assured that you can easily make things pretty from a slightly higher level
+than the raw formatter implementations.
+
+We could stop at the PDF format and move on to wiring up the database models
+and the CRUD, but we might as well try to view this 
+mock data through the browser as well.
+
+=== Using ERB for HTML Reports ===
+
+For better or worse, most HTML generation in Rails is done through ERB.
+It turns out this is a reasonably practical way to do dynamic HTML generation.
+A major criticism of Ruport is that doing string concatenation in the HTML
+formatters seems to take people a little outside their comfort zone, and also
+results in somewhat brittle report views.
+
+Lately, we have been cheating a bit to try to make everyone happy.
+
+------------------------------------------------------------------------------------------------------
+class HTML < Ruport::Formatter::HTML
+  renders :html, :for => TimeSheet       
+  
+  build :time_sheet do
+     output << erb(RAILS_ROOT + "/app/reports/timesheet.html.erb")
+  end
+  
+end
+------------------------------------------------------------------------------------------------------
+
+This allows you to execute an ERB file in the context of a Ruport formatter,
+which means you can mostly treat the HTML formatter as a shim to give you a 
+Rails view that has some reporting pre-processing done for you.
+
+From here, you can reach your Ruport data, options, and helper methods as needed.
+The following ERB template fleshes out the HTML format for the Timesheet controller:          
+
+------------------------------------------------------------------------------------------------------
+<h3>Week of <%= start_date %></h3>
+      
+<table>
+  <tr>
+    <% data.week1_data.column_names.each do |c| %>
+      <th><%= c %></th>
+    <% end %>
+  </tr>
+
+<% data.week1_data.each do |r| %>   
+   <tr>
+     <% r.to_a[0..2].each do |c| %>    
+       <td><%= c %></td>
+     <% end %>
+     <% r.to_a[3..-1].each do |c| %>     
+       <% if c.blank?  %>
+       <td style="background: #999999;">&nbsp;</td>
+       <% else %>
+       <td align="right"><%= c %></td>
+       <% end %> 
+     <% end %>
+   </tr>
+<% end%>
+
+</table>
+------------------------------------------------------------------------------------------------------ 
+
+The nice thing about using an approach like this is that your HTML view code is
+separate from the core formatter and can be updated as needed. Also, you can see
+here that we only show one week at a time in our HTML version of the Timesheet
+report. This hopefully helps illustrate the flexibility of Ruport's formatting
+system.
+
+If you want to try this code, you can use the same mock invoice object.
+Just tweak the path to your ERB file as needed if you've not yet created your
+Rails app, and then run this:
+
+------------------------------------------------------------------------------------------------------
+  @timesheet = MockTimeSheet.new(:week1_data => "week1.csv",
+                                 :week2_data => "week2.csv")
+  @timesheet.save_as("timesheet.html")
+------------------------------------------------------------------------------------------------------       
+
+When you call +save_as('something.format')+, Ruport just looks for the matching
+formatter defined via the +renders :format, :for => Something+ call. 
+This means you can easily use this shortcut with any of your custom formatters, 
+even if they're not one of the four that Ruport supports by default.
+
+=== Time to Dig Deeper ===
+
+Through this introduction to some of the Ruport code in PayR, you may have been
+able to catch a reasonable glance of how we develop reporting applications on
+top of Rails.  However, we certainly don't expect you to come away from what
+we've said so far with a comprehensive idea of how you'll integrate Ruport into
+your projects.  We will now take you through two more PayR reports, this time
+with a whole lot more attention to detail and comprehensive explanations of how
+things actually work.  Though we'll circle back around after that to talk about
+some of Ruport's bells and whistles, the extensive discussion of the formatting
+system to follow will quickly bring you up to speed on one of the most important
+aspects of Ruport development.
+
+
+
+         
+
+
+
+
+
+
+
+
+    
+
