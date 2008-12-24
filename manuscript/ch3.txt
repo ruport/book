@@ -6,7 +6,7 @@ One of the reports needed for PayR is a call-in sheet that lists employees,
 grouped by type, and their hours over a two week period.  Below is the formatted
 output from this report.
 
-image:/Users/chenoa/devel/ruport_book/manuscript/images/payr_formatting_screen1.png
+image:/Users/chenoa/devel/ruport_book/manuscript/images/payr_formatting_screen1.png[]
 
 In this chapter, we'll look in detail at how we created this report. The first
 steps will be to define a controller and one or more formatters, but since this is

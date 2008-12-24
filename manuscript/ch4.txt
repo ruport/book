@@ -1,0 +1,475 @@
+== More Report Formatting ==
+
+==== Introduction ====
+
+Now that you've seen the basics of report formatting, let's look at one of PayR's
+slightly more complicated reports. In general, by supplying an employee and range
+of dates, we want to be able to generate a report of that employee's weekly
+regular hours worked. The output of the report should show a graph of the hours
+worked over the supplied time period, and there should be a tabular presentation
+of the data used to make the graph. Also, we want to put a border around the
+whole page. In the end, the report should look like this:
+
+image:/Users/chenoa/devel/ruport_book/manuscript/images/weekly_report.png[]
+
+For the examples in this chapter, we're going to use Ruport's graphing support,
+provided in the ruport-util package. This package contains support for a few
+different graphing libraries and in this case we used the Gruff library.
+Currently, Ruport only provides integration with Gruff's line graphs, but since
+that's what we plan to use for this report, it will work for us.
+
+==== A Basic Controller and Formatter ====
+
+Before we describe how to use the graphing library, let's get the basics
+in place for the report. We'll develop the report iteratively, to show how you
+can build up a report from different components of Ruport as well as its
+supporting packages. As you saw in the last chapter, we need to start by defining
+a controller and formatter (for this report, we only define a PDF formatter). Start
+by stubbing out the different parts of the report you know you're going to need
+and then you can add the details later.
+
+------------------------------------------------------------------------------------------------------
+  class WeeklyTimeController < Ruport::Controller
+    stage :week
+  
+    class PDF < Ruport::Formatter::PDF
+      renders :pdf, :for => WeeklyTimeController
+    
+      build :week do
+      end
+    end
+  
+  end
+------------------------------------------------------------------------------------------------------
+
+This defines the structure of the report. It has a controller with a single stage
+of +:week+ and a single PDF formatter that builds the stage. You might find later
+that you need more stages to separate out components of the report, that you need
+to predefine certain options as being required, or that you want additional
+formats, but most reports you create will have at least this basic structure.
+
+Before you move on to writing any formatting code, you need to think about how
+you will obtain the data needed for the graph and the table. Since the report's
+requirements stated that you should be able to supply the employee and range of
+dates, we will assume that the code (in the controller) provides an employee id,
+start date, and end date as options to the controller. From there, we should be
+able to obtain all the other data we need.
+
+==== Adding Text ====
+
+The first items on the page are the heading "Employee Times By Week" and the
+name of the employee. This report also uses the Employee model as the basis for
+its data, which will need to be queried for the employee name. You already saw how
+to add text to a PDF document in the last chapter using the +add_text+ method, so
+let's begin by adding the heading and name.
+
+------------------------------------------------------------------------------------------------------
+  class WeeklyTimeController < Ruport::Controller
+    stage :week
+
+    def setup
+      e = Employee.find(options.employee)
+      options.emp_name = e.name
+    end
+
+    class PDF < Ruport::Formatter::PDF
+      renders :pdf, :for => WeeklyTimeController
+
+      build :week do
+        padding = 40
+
+        add_text "Employee Times By Week", :font_size => 16,
+          :justification => :center
+        pad(padding) {
+          add_text "<b>Employee:  </b>#{options.emp_name}", :font_size => 12
+        }
+      end
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+Once again, we use the +setup+ method to perform manipulations on the data for
+our report. We first find the employee from the id (options.employee) supplied to
+the controller. Then we set another option to hold the employee's name for our
+formatter to use. As you see, you can use the options to provide outside
+information to the controller as well as to communicate information between the
+controller and the formatter since they share their options object.
+
+In the formatter, we fill in some of the +build :week+ stage. We add the title
+"Employee Times By Week," using the +add_text+ method supplied by the built-in
+PDF formatter and set the font size and center-justify the text. We also add the
+employee name and use the +pad+ method to add some padding between the
+text.
+
+Notice that we set the font size and justification by passing these options
+directly to the +add_text+ method. There are other techniques you can use to set
+these types of options. One other way is to set an option called +text_format+.
+For example, we could have done this:
+
+------------------------------------------------------------------------------------------------------
+  options.text_format = { :font_size => 16, :justification => :center }
+  
+  add_text "Employee Times By Week"
+------------------------------------------------------------------------------------------------------
+
+You can also set options globally by using a template, as shown in the last
+chapter. For our report, though, since we change the font size and justification
+after each call to +add_text+, it's just as easy to supply the options directly
+to the method. The other techniques, options.text_format and templates, are best
+saved for situations where you have a setting that is global to the document or
+at least is used for a significant portion of it.
+
+==== Adding a Table ====
+
+Now that all of the plain text is added to the report, we can add the graph and
+the table. We will start with the table since it uses techniques that we've seen
+before and then move on to the graph. Adding the table gives us this for our
+controller and formatter:
+
+------------------------------------------------------------------------------------------------------
+  class WeeklyTimeController < Ruport::Controller
+    stage :week
+
+    def setup
+      e = Employee.find(options.employee)
+      options.emp_name = e.name
+      hours = e.regular_hours_for_range(options.start_date,options.end_date).sort
+
+      options.table = Table("Week","Time") {|table|
+        hours.each {|row| table << row }
+      }
+    end
+
+    class PDF < Ruport::Formatter::PDF
+      renders :pdf, :for => WeeklyTimeController
+
+      build :week do
+        padding = 40
+
+        add_text "Employee Times By Week", :font_size => 16,
+          :justification => :center
+        pad(padding) {
+          add_text "<b>Employee:  </b>#{options.emp_name}", :font_size => 12
+        }
+
+        draw_table(options.table, :position => left_boundary, :width => 200,
+          :column_options => { :width => 100 })
+      end
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+There are a few things to emphasize with the changes. First, notice that the
+table data comes from a method (+regular_hours_for_range+) of the Employee model.
+This method obtains the employee's regular hours worked for the date range we
+want (supplied by the start_date and end_date options). Of course, we haven't
+written this method yet, but we'll do that next. Subsequently, we use the data to
+construct a +Ruport::Data::Table+.
+
+We add the table to the report using the +draw_table+ method. What you should
+realize here is that the options we provide to this method, such as :position and
+:width are being passed along to +PDF::Writer+ (+PDF::SimpleTable+ to be more
+accurate). Since Ruport uses +PDF::SimpleTable+ behind the scenes to create the
+table, you can set any of the attributes available to +PDF::SimpleTable+ by
+supplying options with the same name. The +left_boundary+ method is supplied by
+Ruport's PDF formatter and returns the x-position at the left margin.
+
+Although you can set column options manually by creating +PDF::SimpleTable::Column+
+objects, Ruport supplies an abstraction in the +draw_table+ method. You can set
+the :column_options to a hash containing any of the attributes available to
++PDF::SimpleTable::Column+ (again using the same names as the attributes). This is
+usually much easier than creating your own Column objects. Using this technique,
+we set the width of both the table and the columns to get a nicely proportioned
+table.
+
+As noted previously for text, you can also set global options for tables using
+the +table_format+ option. The following is equivalent to the code shown above:
+
+------------------------------------------------------------------------------------------------------
+  options.table_format = :position => left_boundary,
+                         :width => 200,
+                         :column_options => { :width => 100 }
+
+  draw_table(options.table)
+------------------------------------------------------------------------------------------------------
+
+Now let's take a look at the +regular_hours_for_range+ method we added to the
+Employee model. It expects a start date and end date for the range of weeks to
+include in the results. It collects data by week from the beginning of the week
+containing the start date to the end of the week containing the end date.
+Finally, it returns a hash of data for the regular hours worked by the employee
+per week, keyed on the beginning date of each week.
+
+------------------------------------------------------------------------------------------------------
+  def regular_hours_for_week(date=nil)
+    date ||= Date.today
+    start = date.beginning_of_week
+    reg_times = regular_times.find(:all,
+      :conditions => ["start_time between ? and ?", start, start + 7.days] )
+    reg_times.inject(0) {|s,e| s + e.hours }
+  end
+
+  def regular_hours_for_range(start_date,end_date)
+    res = {}
+    date = start_date.beginning_of_week
+    while date <= end_date
+      res.merge!(date => regular_hours_for_week(date))
+      date += 7
+    end
+    res
+  end
+------------------------------------------------------------------------------------------------------
+
+====  Adding a Graph ====
+
+Now that the report contains the text and table, we can add the graph to the
+page. This doesn't require anything much different than what you've already seen,
+but we will be using the ruport-util library for its graphing support. As stated
+earlier, ruport-util wraps portions of the Gruff graphing library (among others)
+for this purpose.
+
+Ruport implements the concept of a graph in a data structure called,
+appropriately, +Ruport::Data::Graph+. This is a subclass of +Ruport::Data::Table+
+with some specialized behavior, mainly the addition of a +series+ method that
+allows you to add lines to the graph. Ruport also supplies a Kernel method called
++Graph+ as a shortcut for creation of the graph.
+
+The updates to the controller and formatter to include the graph are as follows:
+
+------------------------------------------------------------------------------------------------------
+  class WeeklyTimeController < Ruport::Controller
+    stage :week
+
+    def setup
+      require 'ruport/util'
+
+      e = Employee.find(options.employee)
+      options.emp_name = e.name
+      hours = e.regular_hours_for_range(options.start_date,options.end_date).sort
+
+      options.table = Table("Week","Time") {|table|
+        hours.each {|row| table << row }
+      }
+
+      weeks = hours.map {|a| a[0].to_s }
+      values = hours.map {|a| a[1] }
+      g = Graph(weeks)
+      g.series values, e.name
+      options.graph = g
+
+      options.labels = weeks.inject({}) {|l,w|
+        l.merge!(l.size => w)
+      }
+    end
+
+    class PDF < Ruport::Formatter::PDF
+      renders :pdf, :for => WeeklyTimeController
+
+      build :week do
+        padding = 40
+        x = left_boundary
+
+        add_text "Employee Times By Week", :font_size => 16,
+          :justification => :center
+        pad(padding) {
+          add_text "<b>Employee:  </b>#{options.emp_name}", :font_size => 12
+        }
+
+        width = 300
+        height = 225
+        y = cursor - height
+
+        draw_graph(options.graph,
+          :title => "Times By Week", :labels => options.labels,
+          :x => x, :y => y, :width => width, :height => height)
+        
+        move_cursor((height + padding) * -1)
+        draw_table(options.table, :position => x, :width => 200,
+          :column_options => { :width => 100 })
+      end
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+We continue to use the +setup+ method to perform data manipulations. The data for
+the graph is the same as the data we used for the table, namely the hash of
+employee hours created by the +regular_hours_for_range+ method. We use the Kernel
+method Graph to create the graph and then use the +series+ method to add a data
+series to it. Gruff uses a hash with keys that are indexes to the series' data to
+contain the labels for the x-axis, so we create that hash and save it in
+options.labels to use later when we render the graph.
+
+In the formatter, we need to do some work to maintain the flow of the document.
+Adding an image to a PDF using the +draw_graph+ method (which we use here) places
+the image in an absolute position and doesn't move the cursor. Therefore, since
+we want to add it above the table, we need to do some calculations to make sure
+the position of the graph is correct and that the table follows it in the correct
+location.
+
+First we define the width and height of the graph (300x225). Next we calculate
+the y position for placement of the graph. PDF coordinates are calculated from
+the bottom left, so to get the y position, we take the current location of the
+cursor and subtract the height of the graph.
+
+Then we use the +draw_graph+ method of ruport-util to add the graph to the page
+and we supply the graph as well as a hash of options. The options allow you to
+specify the position and size of the graph (with +:x+, +:y+, +:width+, and +:height+), as
+well as set to some characteristics of the graph itself. We add a graph title and
+use the labels we saved earlier. In addition to the options we set, you can also
+use the +:min+ and +:max+ options to set the minimum and maximum values for the
+graph.
+
+Once the graph is positioned and drawn, we need to make sure the table is
+positioned below it. We need to move the cursor to where we want the table to
+start, so we move it (in the negative direction) down an amount equal to the
+height of the graph plus the defined padding.
+
+==== Adding a Border ====
+
+The final step in creating our report is to add the page border. We want this to
+be a double border around the whole page. The controller doesn't change for this
+step, so we'll only show the formatter, with the border added:
+
+------------------------------------------------------------------------------------------------------
+  class PDF < Ruport::Formatter::PDF
+    renders :pdf, :for => WeeklyTimeController
+  
+    build :week do
+      offset = 3
+      margin = offset * 6
+      padding = 40
+      x = left_boundary + margin
+
+      move_cursor(margin * -1)
+      add_text "Employee Times By Week", :font_size => 16,
+        :justification => :center
+      pad(padding) {
+        draw_text "<b>Employee:  </b>#{options.emp_name}",
+          :font_size => 12, :left => x
+      }
+
+      width = 300
+      height = 225
+      y = cursor - height
+
+      draw_graph(options.graph,
+        :title => "Times By Week", :labels => options.labels,
+        :x => x, :y => y, :width => width, :height => height)
+    
+      move_cursor((height + padding) * -1)
+      draw_table(options.table, :position => x + 105, :width => 200,
+        :column_options => { :width => 100 })
+
+      page_border(offset)
+    end
+  
+    def page_border(o)
+      [0,o].each do |offset|
+        top = top_boundary - offset
+        bottom = bottom_boundary + offset
+        left = left_boundary + offset
+        right = right_boundary - offset
+        move_cursor_to(top)
+        horizontal_line(left,right)
+        move_cursor_to(bottom)
+        horizontal_line(left,right)
+        vertical_line_at(left,top,bottom)
+        vertical_line_at(right,top,bottom)
+      end
+    end
+  end
+------------------------------------------------------------------------------------------------------
+
+We define an offset that will be the distance between the two lines of the
+border. To move everything already placed on the page away from the borders, 
+we also use the offset to calculate a margin width.  Finally, we define a
++page_border+ method to draw the lines for the border, again using PDF drawing
+methods supplied by Ruport.
+
+Note that we use the margin to change the x position of the graph and the table,
+so that they don't overlap the border. We also move the cursor down below the
+border before adding the title text. Finally, we change the method used to add
+the employee name from +add_text+ to +draw_text+ so that we can specify its x
+position. We don't need to do so with the title text since it is centered on the
+page.
+
+In this report, we used some of the drawing helpers included in Ruport's built-in
+PDF formatter, such as +horizontal_line+ and +vertical_line_at+, to show you the
+manual techniques needed to draw the border. This will be of benefit if you need
+to draw lines on a PDF page, but there is an easier way to accomplish border
+drawing by using the +FormHelpers+ module included in ruport-util.
+
+The +FormHelpers+ module gives you a basic set of methods that allow you to build
+PDF forms. One of the included methods is +draw_border+. Therefore, we could
+rewrite the relevant sections of the report as follows:
+
+------------------------------------------------------------------------------------------------------
+  class WeeklyTimeController < Ruport::Controller
+    require 'ruport/util'
+    
+    #...
+  
+    class PDF < Ruport::Formatter::PDF
+      include Ruport::Util::FormHelpers
+      
+      #...
+      
+      def page_border(o)
+        draw_border(left_boundary,
+                    top_boundary,
+                    right_boundary - left_boundary,
+                    top_boundary - bottom_boundary)
+        draw_border(left_boundary + o,
+                    top_boundary - o,
+                    (right_boundary - o) - (left_boundary + o),
+                    (top_boundary - o) - (bottom_boundary + o))
+      end
+    end
+  
+  end
+------------------------------------------------------------------------------------------------------
+
+==== Rendering the Report ====
+
+Now that the border is drawn, our report is complete. To finish the discussion of
+this report, let's see the controller method used to generate the report.
+
+------------------------------------------------------------------------------------------------------
+  class ManagerController < ApplicationController  
+  
+    def weekly_time_report
+      pdf = PDF::Writer.new
+    
+      ec = Employee.count - 1
+
+      Employee.find(:all).each_with_index do |e,i|
+        WeeklyTimeController.render_pdf(
+          :start_date => params[:start].to_date,
+          :end_date => params[:end].to_date,
+          :employee => e.id,
+          :formatter => pdf
+        )
+        pdf.start_new_page unless ec == i
+      end
+    
+      send_data pdf.render, :type => "application/pdf", :filename => "graph.pdf"
+    end
+    
+  end
+------------------------------------------------------------------------------------------------------
+
+When generating the report, we iterate through the employees and add a page to
+the PDF for each employee. For this reason, we need to instantiate our own
++PDF::Writer+ object and pass it to the controller. As discussed in the previous
+chapter, if we use the default behavior, then the formatter will create a new
++PDF::Writer+ object each time it is called.  When we create our own
+object, the formatter will re-use it instead of creating a new one.
+
+As you can see, especially when creating PDFs, formatting can involve trial and error, adding pieces of the report individually and moving things around in the design until it looks right. Ruport supplies a lot of tools to make these formatting tasks easier.       
+
+In the last few chapters you've seen most of what you'll need for the formatting
+tasks you'll encounter in your daily work.  We'll now jump into another aspect
+of Ruport, which is quick and dirty ad-hoc reporting.
