@@ -1,4 +1,4 @@
-=== Report Formatting ===
+== Report Formatting ==
 
 ==== Introduction ====
 
@@ -6,15 +6,15 @@ One of the reports needed for PayR is a call-in sheet that lists employees,
 grouped by type, and their hours over a two week period.  Below is the formatted
 output from this report.
 
-<img src="payr_formatting_screen1.png">
+image:/Users/chenoa/devel/ruport_book/manuscript/images/payr_formatting_screen1.png
 
 In this chapter, we'll look in detail at how we created this report. The first
 steps will be to define a controller and one or more formatters, but since this is
 a Rails project, you first need to decide where to put the files in the Rails
 directory structure. There's no single best location; some people prefer to place
-them in @app/reports@ and others in @lib@, so that decision is ultimately up to
+them in +app/reports+ and others in +lib+, so that decision is ultimately up to
 you for your own projects. The code for all of the reports in PayR is located in
-@app/reports@. Each class has its own file to make browsing easy.
++app/reports+. Each class has its own file to make browsing easy.
 
 ==== Data Model ====
 
@@ -93,7 +93,7 @@ used to populate "_Employee_" and "_Employee Type_".
 All of the other columns contain calculated data. Since our focus is on producing
 the output using Ruport, we won't go into detail on all of the techniques used to
 generate the data other than to say that the Employee model is provided with an
-+employee_record+ method and a @name@ method.  The output of each might look
++employee_record+ method and a +name+ method.  The output of each might look
 something like this:
 
 ------------------------------------------------------------------------------------------------------
@@ -176,26 +176,26 @@ which will be explained in more detail elsewhere footnote:[See the Data
 Manipulations cheatsheet for more detail.] but for now, just know that you can
 use the +<<+ method to add rows to the table.
 
-After the table is created, we use Ruport's @rename_columns@ method to give the
+After the table is created, we use Ruport's +rename_columns+ method to give the
 columns the required names for the report. First we need to manually rename the
 "week1" and "week2" columns to capitalize and add spaces, resulting in "Week 1"
-and "Week 2". Notice you can pass a hash to @rename_columns@ which maps the
+and "Week 2". Notice you can pass a hash to +rename_columns+ which maps the
 old column names to the new column names. The next call to
-@rename_columns@ uses the block form and calls @to_s@ and @titleize@ for each of
++rename_columns+ uses the block form and calls +to_s+ and +titleize+ for each of
 the column names.
 
 The last data manipulation step is to group the data by creating a Ruport
-Grouping. We use the Kernel method @Grouping@ to create it. This method takes two
+Grouping. We use the Kernel method +Grouping+ to create it. This method takes two
 paramaters; a table or group that will be used as the source of data to create
 the Grouping and the name of the column or columns to group by.
 
-h3. Using the @setup@ Method
+==== Using the +setup+ Method ====
 
 At this point we have finished populating the table that will be the basis for
 the final report. Next, we set this grouping as the controller's data source, as
 follows:
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   class CallInController < Ruport::Controller
 
     stage :call_in_sheet
@@ -206,34 +206,34 @@ follows:
     end
 
   end
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
 We create a new CallInAggregator and pass in the :start parameter, using the
-@:start_date@ option that we mentioned earlier. Then we call the @to_grouping@
++:start_date+ option that we mentioned earlier. Then we call the +to_grouping+
 method on the newly created CallInAggregator object. Finally, the resulting
 Grouping is set as the controller's data attribute. The data attribute is available
 in both your controller and any associated formatters to hold the report's data.
 
-Note that this code is contained in a method named @setup@. The @setup@ method is
+Note that this code is contained in a method named +setup+. The +setup+ method is
 special in that, if present in your controller, it will be called after all of the
 options have been set (and after the data attribute has been set, if you pass in
-the data at rendering-time). Consequently, you have access within @setup@ to all
+the data at rendering-time). Consequently, you have access within +setup+ to all
 of the information supplied to the controller, allowing you to do data
 manipulations or anything else that you might need to accomplish prior to actual
 formatting.
 
-h3. Using the Helpers Module
+==== Using the Helpers Module ====
 
 We need to add one more thing to the controller before moving on to the formatter.
 Our report is going to have a header that includes the date range. We want these
-dates to be in a specific format, so we use the @strftime@ method to output them
+dates to be in a specific format, so we use the +strftime+ method to output them
 in the proper format. We could just do this in the formatter, but that might not
 be particularly DRY. What if we want to use the dates in several different
 formatters (for different output formats) or even in multiple locations within a
-single formatter? This is where you can use a special module called @Helpers@, as
+single formatter? This is where you can use a special module called +Helpers+, as
 follows:
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   class CallInController < Ruport::Controller
 
     stage :call_in_sheet
@@ -258,22 +258,22 @@ follows:
     end
 
   end
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
-We define @start_date@ and @end_date@ methods, containing the code to calculate
-and format the dates, within the @Helpers@ module. If present, @Helpers@ will be
+We define +start_date+ and +end_date+ methods, containing the code to calculate
+and format the dates, within the +Helpers+ module. If present, +Helpers+ will be
 mixed in to the formatter (or formatters). This allows you to call any of the
 module's methods in your formatters and satisfies the DRY principle in that we
 only have to define them once.
 
-h3. Ruport Formatters
+==== Ruport Formatters ====
 
 The next step in creating the output is to define one or more formatters for each
 of the output formats you want to produce. Each one will register itself as the
 formatter for a particular named format. For our report, we want to be able to
 produce both PDF and HTML output, so we need two formatters.
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   class PDF < Ruport::Formatter::PDF
     
     renders :pdf, :for => CallInController
@@ -285,9 +285,9 @@ produce both PDF and HTML output, so we need two formatters.
     renders :html, :for => CallInController
     
   end
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
-Although you can define formatter classes that subclass @Ruport::Formatter@
+Although you can define formatter classes that subclass +Ruport::Formatter+
 directly, if your output is going to be one of the four that Ruport supports
 internally (PDF, HTML, CSV, or text), you probably want to subclass the built-in
 formatter for that type of output. The reason is that each of the built-in
@@ -295,8 +295,8 @@ formatters contains predefined helper methods to make the task of developing the
 formatting code much easier.
 
 For our call-in report, we create formatters for PDF and HTML output by
-subclassing @Ruport::Formatter::PDF@ and @Ruport::Formatter::HTML@, respectively. The
-formatters call the @renders@ class method in order to register themselves with
+subclassing +Ruport::Formatter::PDF+ and +Ruport::Formatter::HTML+, respectively. The
+formatters call the +renders+ class method in order to register themselves with
 the controller. Each supplies the name of the format and the controller for which it
 will supply output.
 
@@ -305,7 +305,7 @@ stage for the report (:call_in_sheet), so our formatter will need to supply an
 implementation for the :call_in_sheet stage. For the PDF formatter, we have the
 following:
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   class PDF < Ruport::Formatter::PDF
     
     renders :pdf, :for => CallInController
@@ -318,17 +318,17 @@ following:
     end
     
   end        
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
-The @pad_bottom@ method is one of the helpers provided by the built-in PDF
+The +pad_bottom+ method is one of the helpers provided by the built-in PDF
 formatter and, as its name implies, adds the specified amount of space to the
 bottom of the output created within the associated block. There are many of these
 types of helpers in the PDF formatter to assist with properly positioning and
-drawing output on the page, suitable for printing. Another is the @add_text@
-method that we use to output the header. Note that we use the @start_date@ and
-@end_date@ methods that we defined earlier in the @Helpers@ module.
+drawing output on the page, suitable for printing. Another is the +add_text+
+method that we use to output the header. Note that we use the +start_date+ and
++end_date+ methods that we defined earlier in the +Helpers+ module.
 
-Finally, we call the @render_grouping@ method. Since the data that we want to
+Finally, we call the +render_grouping+ method. Since the data that we want to
 output is a Grouping object and since groupings have their own predefined
 controller, we can use this method to pass off the work to the built-in Grouping
 controller. We supply it with the data attribute as the first parameter, which you
@@ -338,19 +338,19 @@ The second parameter consists of the formatter options object, which we convert
 to a hash. We need to pass these along because we're asking a different controller
 to create output for us, so we need to make sure it has all of the options that
 were sent to the main controller, in case it needs to use some of them. In the case
-of a PDF, we also need to do more - pass in the current formatter's @pdf_writer@
+of a PDF, we also need to do more - pass in the current formatter's +pdf_writer+
 object as the :formatter option.
 
-The built-in PDF formatter contains an object called @pdf_writer@ which is an
-instance of @PDF::Writer@. It is a representation of the PDF document we're
+The built-in PDF formatter contains an object called +pdf_writer+ which is an
+instance of +PDF::Writer+. It is a representation of the PDF document we're
 creating and as such, we want all of our output to be contained in this document.
 If we don't include it in the options, the formatter for the Grouping controller
-will create a new @pdf_writer@ object and we won't get the expected results. Other
+will create a new +pdf_writer+ object and we won't get the expected results. Other
 output formats won't generally have this concern.
 
 Below is the formatter for the HTML output:
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   class HTML < Ruport::Formatter::HTML
     
     renders :html, :for => CallInController
@@ -361,17 +361,17 @@ Below is the formatter for the HTML output:
     end
     
   end
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
 For HTML, we can just append all of the formatted data to the output object as a
-string. First we generate the header using the @textile@ method. This is a helper
+string. First we generate the header using the +textile+ method. This is a helper
 provided by the built-in HTML formatter and uses RedCloth to evaluate the string
-provided in textile format. Next we call @to_html@ on the data. This is a
+provided in textile format. Next we call +to_html+ on the data. This is a
 shortcut method to render the Grouping as HTML output. The built-in formatters
 define a number of different output styles for groupings, here we specify the
 :justified style.
 
-h3. Using Templates
+==== Using Templates ====
 
 Now that the controller and formatters are defined, we're ready to actually
 generate the output, right? In fact, we could do so, but let's do one more thing
@@ -393,11 +393,11 @@ formatter. This is helpful if you want to render the same report in multiple
 locations or if you want to define a consistent set of options to use for a
 number of different reports.
 
-You define a template by using the @create@ method of @Ruport::Formatter::Template@
+You define a template by using the +create+ method of +Ruport::Formatter::Template+
 and giving the template a name. Here's the template we defined for the PayR
 reports:
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   Ruport::Formatter::Template.create(:default) do |format|
 
     format.page = {
@@ -430,22 +430,22 @@ reports:
     }
 
   end
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
 Notice that these are mostly formatting instructions that will be used by the
 formatters (primarily by the PDF formatter). The individual formatters will
 simply ignore any options that they don't use. Once we have the template defined,
 we will pass its name as the :template option when we render the report and the
-template will be available to the formatter.  (footnote: See the Ruport Formatting cheatsheet for more details on template usage.)
+template will be available to the formatter footnote:[See the Ruport Formatting cheatsheet for more details on template usage.].
 
-h3. Producing Output
+==== Producing Output ====
 
 Now we're finally ready to actually render the output. While there are a number
 of different ways you can accomplish this, let's look at how you might typically
 do so in the context of a Rails project like PayR. We add a method to one of our
 controllers to generate the report.
 
-<pre><code>
+------------------------------------------------------------------------------------------------------
   class ManagerController < ApplicationController
   
     def call_in_sheet
@@ -460,15 +460,15 @@ controllers to generate the report.
     end
     
   end
-</code></pre>
+------------------------------------------------------------------------------------------------------
 
-To generate a PDF report, we call @render_pdf@ on the CallInController, passing in
+To generate a PDF report, we call +render_pdf+ on the CallInController, passing in
 the start_date option and the name of the template. We assign the output to a
-variable called @pdf@ and then use the @send_data@ method to stream the output to
+variable called +pdf+ and then use the +send_data+ method to stream the output to
 the user's browser. We supply the type of the output as being "application/pdf"
 and, although optional, we define the disposition and filename. Rendering HTML
 format is similar, but you can render the output directly rather than streaming
-it with @send_data@.
+it with +send_data+.
 
 This chapter provided an overview of Ruport's formatting system through a
 real-world example from the PayR project. For more on rendering and formatting,
