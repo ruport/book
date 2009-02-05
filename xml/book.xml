@@ -11,12 +11,23 @@
 <bookinfo><edition>2</edition>
 <authorgroup>
 <author><firstname>Gregory</firstname><surname>Brown</surname></author>
+<author><firstname>Michael</firstname><surname>Milner</surname></author>
 </authorgroup>
 </bookinfo>
-<xi:include href='ch_foreword.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
 <xi:include href='ch_preface.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
 <xi:include href='ch_ch1.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
 <xi:include href='ch_ch2.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
 <xi:include href='ch_ch3.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
 <xi:include href='ch_ch4.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch5.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch6.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch7.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch8.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch9.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch10.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch11.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch12.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch13.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_ch14.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
+<xi:include href='ch_hacking_guide.xml' xmlns:xi='http://www.w3.org/2001/XInclude'/>
 </book>

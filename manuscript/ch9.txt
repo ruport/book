@@ -1,0 +1,450 @@
+== Cheatsheet: Ruport's Formatting System ==
+
+A common need in reporting is to be able to display the same data in a number of
+different formats.  Ruport's Formatting System provides a highly flexible way to
+separate your rendering process from your specific formatting code.  This
+cheatsheet shows how the parts come together and the tools that are available to
+you.
+
+=== Abstracting the Rendering Process ===
+
+Building a custom controller allows you to define the steps which should be taken
+to produce your reports, as well as the options that will be available to them.
+
+The following simple example shows a fully functional controller:
+
+------------------------------------------------------------------------------------------------------
+  class InvoiceController < Ruport::Controller
+
+    stage :company_header, :invoice_header, :invoice_body, :invoice_footer
+
+    required_option :employee_name, :employee_id
+  end
+------------------------------------------------------------------------------------------------------
+
+Without any more code, the above defines what our interface will look like.  We
+know that in order to render a given format, we'll be writing something like
+this:
+
+------------------------------------------------------------------------------------------------------
+  InvoiceController.render_some_format(:data => my_data, 
+                                     :employee_name => "Samuel L. Jackson",
+                                     :employee_id => "e1337")  
+------------------------------------------------------------------------------------------------------
+
+The block form that you may be familiar with from the standard Ruport controllers
+also works as expected:
+
+------------------------------------------------------------------------------------------------------    
+  InvoiceController.render(:some_format) do |r|
+    r.data = my_data
+    r.options do |o|
+      o.employee_name = "Samuel L. Jackson"
+      o.employee_id   = "e1337"    
+    end
+  end  
+------------------------------------------------------------------------------------------------------
+
+The power here of course is that even as new formats are added, our external
+interface stays the same.  We'll now show how formatters are implemented, to
+give you an idea of how stages work.
+
+=== Using Formatters to Encapsulate Low Level Code ===
+
+A Formatter implements one or more labeled formats which are registered on one
+or more Controller objects.  Here we show a simple text formatter for the
+InvoiceController.
+
+------------------------------------------------------------------------------------------------------
+  class Text < Ruport::Formatter
+
+    renders :text, :for => InvoiceController
+
+    build :company_header do
+      output << "My Corp. Standard Report\n\n"
+    end
+
+    build :invoice_header do
+      output << "Invoice for #{options.employee_name} " <<
+                "(#{options.employee_id}), generated #{Date.today}\n\n"
+    end
+
+    build :invoice_body do
+      data.each do |r| 
+        output << "#{r[:service].ljust(40)} | #{r[:rate].rjust(10)}\n" 
+      end
+    end
+
+    build :invoice_footer do
+      output << "\n#{options.note}\n\n" if options.note
+    end
+  end
+------------------------------------------------------------------------------------------------------
+
+Looking back at the controller, you can see that +stage :some_stage+ gets
+translated to +build :some_stage+ in the formatter. This is a convenience
+syntax for defining methods with the name +build_some_stage+ for each of
+the stages. Although the controller will attempt to call all of these hooks, it
+will happily pass over any that are missing. This means that if you did not want
+to include the company header in a given format, you could just leave
++build :company_header+ out of your formatter.
+
+You'll also notice that the options passed into the Controller can be accessed via
+the +options+ collection in the formatter.  
+
+You can also see that the formatter registers itself with the InvoiceController,
+via:
+
+  renders :text, :for => InvoiceController
+
+The following chunk of code shows our Controller/Formatter pair in action.
+
+------------------------------------------------------------------------------------------------------
+  data = Table(:service,:rate)
+  data << ["Mow The Lawn", "50.00"]
+  data << ["Sew Curtains", "120.00"]
+  data << ["Fly To Mars", "10000.00"]
+
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337",
+                                   :note => "END OF INVOICE")
+------------------------------------------------------------------------------------------------------
+
+Output:
+
+------------------------------------------------------------------------------------------------------
+My Corp. Standard Report
+
+Invoice for Samuel L. Jackson (e1337), generated 2007-08-01
+
+Mow The Lawn              |      50.00
+Sew Curtains              |     120.00
+Fly To Mars               |   10000.00
+
+END OF INVOICE
+------------------------------------------------------------------------------------------------------
+
+==== Adding Additional Formatters ====
+
+The following definition adds XML format to our report.
+
+------------------------------------------------------------------------------------------------------
+  class XML < Ruport::Formatter
+
+    renders :xml, :for => InvoiceController
+
+    def layout
+      output << "<invoice>\n"
+      yield
+      output << "</invoice>"
+    end
+
+    build :invoice_body do
+      add_employee_info
+
+      generate_data_rows
+
+      add_meta_data
+    end
+
+    def add_employee_info
+      output << "<employee name='#{options.employee_name}' id='#{options.employee_id}'/>\n"
+    end
+
+    def generate_data_rows
+      data.each do |r|
+        output << "<item charge='#{r[:rate]}'>#{r[:service]}</item>\n"
+      end
+    end
+
+    def add_meta_data
+      output << "<note>#{options.note}</note>\n<created>#{Date.today}</created>\n"
+    end
+  end
+------------------------------------------------------------------------------------------------------
+
+There are a few things which make this different from our text formatter, but at
+the heart it is the same general idea.  
+
+You'll notice that we use a layout for this code.  This allows us to have
+some additional control over the rendering process, allowing us to run some code
+before and after the stages are executed.  In this case, we're simply wrapping
+the output in an < invoice > tag.
+
+We've also only implemented one of the many stages the controller tries to call.
+This is because we're generating output for serialization, so we have no need
+for headers and footers.
+
+To generate XML instead of Text, you'll notice it's only a couple characters that
+need changing:
+
+------------------------------------------------------------------------------------------------------
+puts InvoiceController.render_xml( :data => data,
+                                 :employee_name => "Samuel L. Jackson",
+                                 :employee_id => "e1337",
+                                 :note => "END OF INVOICE")
+------------------------------------------------------------------------------------------------------
+
+Output:
+
+------------------------------------------------------------------------------------------------------
+<invoice>
+<employee name='Samuel L. Jackson' id='e1337'/>
+<item charge='50.00'>Mow The Lawn</item>
+<item charge='120.00'>Sew Curtains</item>
+<item charge='10000.00'>Fly To Mars</item>
+<note>END OF INVOICE</note>
+<created>2007-08-01</created>
+</invoice>
+------------------------------------------------------------------------------------------------------
+
+=== Custom Formatters for Ruport's Standard Controllers ===
+
+Using the techniques from above, you can easily build an extension to our
+standard controllers.
+
+The following example adds XML support for our Table controller:
+
+------------------------------------------------------------------------------------------------------
+  class XML < Ruport::Formatter
+
+    renders :xml, :for => Ruport::Controller::Table
+
+    def layout
+      output << "<table>\n"
+      yield
+      output << "</table>\n"
+    end
+
+    build :table_header do
+      output << "<header>\n"
+      output << build_row(data.column_names)
+      output << "</header>\n"
+    end
+
+    build :table_body do
+      output << "<body>\n"
+      data.each { |r| output << build_row(r) }
+      output << "</body>"
+    end
+
+    def build_row(row)
+      "<row>\n  <cell>" << 
+        row.to_a.join("</cell><cell>") <<
+      "</cell>\n</row>\n"
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+This makes the formatter immediately available for use with Ruport's +Data::Table+
+structure.
+
+------------------------------------------------------------------------------------------------------
+  data = Table(:service,:rate)
+  data << ["Mow The Lawn", "50.00"]
+  data << ["Sew Curtains", "120.00"]
+  data << ["Fly To Mars", "10000.00"]
+  puts data.to_xml
+------------------------------------------------------------------------------------------------------
+
+Output:
+
+------------------------------------------------------------------------------------------------------
+<table>
+<header>
+<row>
+  <cell>service</cell><cell>rate</cell>
+</row>
+</header>
+<body>
+<row>
+  <cell>Mow The Lawn</cell><cell>50.00</cell>
+</row>
+<row>
+  <cell>Sew Curtains</cell><cell>120.00</cell>
+</row>
+<row>
+  <cell>Fly To Mars</cell><cell>10000.00</cell>
+</row>
+</body>
+</table>
+------------------------------------------------------------------------------------------------------
+
+Of course, you can and should use your favorite Ruby XML builder for any task
+more interesting than this.  Ruport happily wraps any third party library you'd
+like to use.
+
+=== Using Templates ===
+
+Templates allow you to define a reusable set of formatting options. You can create multiple templates with different options and specify which one should be used at the time of rendering.
+
+Define a template using the +create+ method of +Ruport::Formatter::Template+.
+
+------------------------------------------------------------------------------------------------------
+  Ruport::Formatter::Template.create(:simple) do |t|
+    t.note = "END OF INVOICE"
+  end
+
+  Ruport::Formatter::Template.create(:other) do |t|
+    t.note = "END"
+  end
+------------------------------------------------------------------------------------------------------
+      
+Then define an +apply_template+ method in your formatter to tell it how to process the template.
+
+------------------------------------------------------------------------------------------------------
+  class Ruport::Formatter::Text
+
+    def apply_template
+      options.note = template.note
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+To use a particular template, specify it using the +:template+ option when you render your output.
+
+------------------------------------------------------------------------------------------------------
+  data = Table(:service,:rate)
+  data << ["Mow The Lawn", "50.00"]
+  data << ["Sew Curtains", "120.00"]
+  data << ["Fly To Mars", "10000.00"]
+
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337",
+                                   :template => :simple)
+
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337",
+                                   :template => :other)
+
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337")
+------------------------------------------------------------------------------------------------------   
+
+To derive one template from another, use the +:base+ option to +Ruport::Formatter::Template.create+.
+
+  Ruport::Formatter::Template.create(:derived, :base => :simple) 
+
+Ruport has a standard template interface to each of the built-in formatters. This example shows a number of the options being used.
+
+------------------------------------------------------------------------------------------------------
+  Ruport::Formatter::Template.create(:simple) do |format|
+    format.page = {
+      :size   => "LETTER",
+      :layout => :landscape
+    }
+    format.text = {
+      :font_size => 16
+    }
+    format.table = {
+      :font_size      => 16,
+      :show_headings  => false
+    }
+    format.column = {
+      :alignment => :center,
+      :heading => { :justification => :right }
+    }
+    format.grouping = {
+      :style => :separated
+    }
+  end
+------------------------------------------------------------------------------------------------------
+
+=== Default Templates ===
+
+Ruport takes the idea of templates one step further by allowing you to define a
+default template that will be available to all of your formatters. You create one
+like any other template, but give it the name :default.
+
+------------------------------------------------------------------------------------------------------
+  Ruport::Formatter::Template.create(:default) do |format|
+    format.page = {
+      :size   => "LETTER",
+    }
+    format.text = {
+      :font_size => 16
+    }
+    format.table = {
+      :font_size      => 16,
+      :show_headings  => true,
+      :width          => 40
+    }
+    format.grouping = {
+      :style => :separated
+    }
+  end
+------------------------------------------------------------------------------------------------------
+
+The default template will then be used for any reports that you render without
+specifying a template or that you render with :template => false. For example,
+assume we have defined the default template shown above, as well as the :simple
+template defined in the previous section.
+
+This will render the report using the :default template.
+
+------------------------------------------------------------------------------------------------------
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337")
+------------------------------------------------------------------------------------------------------
+
+This will render the report using the :simple template.
+
+------------------------------------------------------------------------------------------------------
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337",
+                                   :template => :simple)
+------------------------------------------------------------------------------------------------------
+
+This will render the report without using a template.
+
+------------------------------------------------------------------------------------------------------
+  puts InvoiceController.render_text(:data => data,
+                                   :employee_name => "Samuel L. Jackson",
+                                   :employee_id => "e1337",
+                                   :template => false)
+------------------------------------------------------------------------------------------------------
+
+You can retrieve the default template, if it exists, using the
++Ruport::Formatter::Template.default+ method. You might use this to mix some of the
+default and specific templates in your +apply_template+ method.
+
+------------------------------------------------------------------------------------------------------
+  class Ruport::Formatter::Text
+
+    def apply_template
+      options.show_table_headers = template.table[:show_headings]
+      options.table_width = Ruport::Formatter::Template.default.table[:width]
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+=== Related Resources / Digging Deeper ===
+
+What was shown here are simply the formatting system basics.  You can actually
+do a whole lot more as your tasks become more complicated.  
+
+If you're looking for an easy way to normalize your data before it is 
+formatted, or share logic between formatters, see the custom controller logic 
+cheatsheet.
+
+If you're looking to build printable reports in PDF format and would like 
+to take advantage of some of Ruport's helpers, see the printable documents 
+cheatsheet.
+
+There are also some helpful examples in the integration hacks cheatsheet that 
+show how to quickly wrap existing code with Ruport's formatting system.
+
+The API docs for the controllers all list the hooks they implement and the options
+they receive.  This will be helpful if you are looking to extend our built-in
+controllers.
+
+The API docs for +Ruport::Formatter::Template+ list all of the options/values available in the template interface to the built-in formatters. 

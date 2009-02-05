@@ -68,7 +68,7 @@ Collected statistics can be found on the project's website at http://tattle.ruby
 
 ------------------------------------------------------------------------------------------------------
 
-==== Overview by Example ====
+=== Overview by Example ===
 
 In order to provide a general overview of Ruport's functionality, we're going create an example report from the Tattle data.  Ruport is perfect for this kind of task, as it involves pulling the collected data from a database, grouping it, and then generating output in a variety of formats, just what we described as Ruport's strengths.
 
@@ -107,7 +107,7 @@ The following is a fully functional report that we'll show you how to create in 
 
 ------------------------------------------------------------------------------------------------------
 
-==== Ruport's Data Structures ====
+=== Ruport's Data Structures ===
 
 Ruport uses four basic data structures: records, tables, groups, and groupings.  These are all contained in the +Ruport::Data+ module.  Thus, the fully qualified class names are +Ruport::Data::Record+, +Ruport::Data::Table+, +Ruport::Data::Group+, and +Ruport::Data::Grouping+.  When we use the terms record, table, group, or grouping without further qualification, we are referring to these data structures.
 
@@ -129,7 +129,7 @@ In order to access the data, you can use array-like notation +a[1]+, or (provide
 
 Ruport tables are collections of records and as mentioned previously, they form the basis for much of Ruport's functionality.  They also provide a variety of methods for working with the data they contain.  In the next sections of the tutorial, we will demonstrate how to create tables and manipulate their structure and contents.
 
-==== Manipulating Data ====
+=== Manipulating Data ===
 
 In the final version of our example, we'll use Ruport's acts_as_reportable module to collect some data from the Tattle database, which will allow us to avoid using most of the techniques presented in this section, since we can constrain the data as it is being collected.  However, to demonstrate the capabilities of Ruport in the context of data manipulation, we won't do that yet.  Instead, we'll manually create tables containing the data of interest.  The techniques we demonstrate in this section, however, are generally applicable, regardless of how you collect the data.
 
@@ -396,7 +396,7 @@ we can move on now. In the next section, we'll look at how you can use Ruport's
 built-in controllers and formatters to produce formatted output from existing
 data.
 
-==== Formatting and Rendering ====
+=== Formatting and Rendering ===
 
 Now that we have some data in a particular structure, the next step is to actually produce some output.  In this section, we describe the basics of creating output from the standard data structures using Ruport's built-in formatters.  Ruport also includes a system for defining your own output formats, and we'll look at that briefly.
 
@@ -467,7 +467,7 @@ produces:
 When using the standard data structures, that's all there is to it!  If you don't like the way they look or if you have specific needs, you can define your own formats.  You don't have to do so in order to use Ruport, but soon enough you'll probably encounter a situation where you need to create a customized
 formatter.
 
-==== Custom Formatting ====
+=== Custom Formatting ===
 
 Ruport's formatting system consists of two components: the controller and the formatter.  The controller defines the steps needed to build the output and the formatter defines the implementation of those steps for one or more output formats.  The following is an example of how you can define another formatter for the table we've been using.  It will output the table in the same text format we've already seen, but add a header.  It's not of much practical use, but will illustrate how to create a custom format.
 
@@ -524,7 +524,7 @@ produces:
 
 The built-in formatters contain many useful helper methods and it's frequently beneficial to inherit from them rather than directly from +Ruport::Formatter+.  The topic of controllers and formatters will be covered in much more detail later in the book, but you should now have a general understanding of how they work.  As we mentioned, we'll be using the acts_as_reportable module to create the report, so let's take a look briefly at how to use it before getting back to the example.
 
-==== Loading acts_as_reportable ====
+=== Loading acts_as_reportable ===
 
 Ruport has two built-in mechanisms to get the data needed for your report.  First, you can use the Query class contained in ruport-util, which relies on the Ruby DBI library.  Second, you can hook into ActiveRecord using Ruport's acts_as_reportable module, and this second option is what we're going to use in our example.  Basically, acts_as_reportable uses the results of an +ActiveRecord::Base.find()+ to prepare a Ruport data table.
 
@@ -534,7 +534,7 @@ Since we want to use acts_as_reportable to integrate Ruport into a Rails applica
 
 Loading Ruport will automatically make the acts_as_reportable module available if ActiveRecord is already loaded, which will be true for a Rails application.  Next, let's see how to use acts_as_reportable to collect some data.
 
-==== Collecting Data ====
+=== Collecting Data ===
 
 The first step in any reporting project is to collect the data needed to generate the report.  The data for the Tattle project is kept in a single database table named "reports," and the corresponding ActiveRecord model class is Report.  The first thing we need to do is hook the Report model up to Ruport using acts_as_reportable.
 
@@ -573,7 +573,7 @@ produces:
 
 There are many other options to constrain the data as you're collecting it using acts_as_reportable, but we'll leave that for later in the book footnote:[See the acts_as_reportable cheatsheet for more detail.].  Once you get your data into one of Ruport's data structures, the acquisition method becomes irrelevant.  Everything else you do with that object will be identical, whether you collect the data using acts_as_reportable or some other method.  This concludes the background information you need to understand the real report we're going to build using the Tattle project data, so now let's do some real work.
 
-==== Tattle Example Report ====
+=== Tattle Example Report ===
 
 We're going to walk through an example of a report generated from the Tattle data.  This report is included in the examples packaged with Ruport (+tattle_rubygems_version.rb+ in the examples directory). There is also a dump of the Tattle database in the examples/data directory.  The example shows how to create the report outside of Rails, but since we want to add it to the Tattle Rails project, we need to change it slightly.
 

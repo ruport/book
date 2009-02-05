@@ -1,0 +1,284 @@
+== Cheatsheet: Using acts_as_reportable ==
+
+Ruport's acts_as_reportable module provides support for using ActiveRecord for data collection.  You can use it to get a +Ruport::Data::Table+ from an ActiveRecord model.  This cheatsheet covers the basic functionality of acts_as_reportable and some common use cases.
+
+=== Loading ===
+
+When Ruport is loaded, it tries to automatically load acts_as_reportable as well.
+In order for that to happen, however, there are two prerequisites:
+acts_as_reportable must be installed and ActiveRecord must be installed and
+loaded. Otherwise, you can load acts_as_reportable manually when you need it by
+calling +require 'ruport/acts_as_reportable'+.
+
+=== Basic Usage ===
+
+You hook up your ActiveRecord model to acts_as_reportable using the +acts_as_reportable+ class method.
+
+------------------------------------------------------------------------------------------------------
+  class Book < ActiveRecord::Base
+    acts_as_reportable
+    belongs_to :author
+    
+    def author_name
+      author.name
+    end
+  end
+
+  class Author < ActiveRecord::Base
+    acts_as_reportable
+    has_many :books
+  end
+------------------------------------------------------------------------------------------------------
+
+You can get a Ruport table using the +report_table+ method.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table
++----------------------------------------------------+
+|               title               | id | author_id |
++----------------------------------------------------+
+| Why's (Poignant) Guide to Ruby    |  1 |         1 |
+| Flow My Tears, The Policeman Said |  2 |         2 |
+| Farenheit 451                     |  3 |         3 |
+| Gravity's Rainbow                 |  4 |         4 |
++----------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+You can use the :only option to specify only certain columns be returned. Note
+that although the columns in the tables returned by acts_as_reportable are
+generally unordered, use of the :only option will set the columns to be returned
+in the order they are listed in the option's array. Therefore, the :only option
+has a secondary function: in addition to reducing the population of columns
+returned, it will also order the columns.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :only => [:id, :title])
++----------------------------------------+
+| id |               title               |
++----------------------------------------+
+|  1 | Why's (Poignant) Guide to Ruby    |
+|  2 | Flow My Tears, The Policeman Said |
+|  3 | Farenheit 451                     |
+|  4 | Gravity's Rainbow                 |
++----------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+You can use the :except option to specify certain columns to not be returned.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :except => :author_id)
++----------------------------------------+
+|               title               | id |
++----------------------------------------+
+| Why's (Poignant) Guide to Ruby    |  1 |
+| Flow My Tears, The Policeman Said |  2 |
+| Farenheit 451                     |  3 |
+| Gravity's Rainbow                 |  4 |
++----------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+You can use the :methods option to return the result of calling a method for each row.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :methods => :author_name)
++---------------------------------------------------------------------+
+|  author_name   |               title               | id | author_id |
++---------------------------------------------------------------------+
+| _why           | Why's (Poignant) Guide to Ruby    |  1 |         1 |
+| Philip K. Dick | Flow My Tears, The Policeman Said |  2 |         2 |
+| Ray Bradbury   | Farenheit 451                     |  3 |         3 |
+| Thomas Pynchon | Gravity's Rainbow                 |  4 |         4 |
++---------------------------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+You can use the :include option to include associated models.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :include => :author)
++----------------------------------------------------------------------------->>
+|               title               | id | author_id | author.id |  author.nam>>
++----------------------------------------------------------------------------->>
+| Why's (Poignant) Guide to Ruby    |  1 |         1 |         1 | _why       >>
+| Flow My Tears, The Policeman Said |  2 |         2 |         2 | Philip K. D>>
+| Farenheit 451                     |  3 |         3 |         3 | Ray Bradbur>>
+| Gravity's Rainbow                 |  4 |         4 |         4 | Thomas Pync>>
++----------------------------------------------------------------------------->>
+------------------------------------------------------------------------------------------------------
+
+The options can be combined and all of the same options can be passed to any included associations, using a hash.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :only => :title,
+     :include => { :author => { :only => :name } })
++----------------------------------------------------+
+|               title               |  author.name   |
++----------------------------------------------------+
+| Why's (Poignant) Guide to Ruby    | _why           |
+| Flow My Tears, The Policeman Said | Philip K. Dick |
+| Farenheit 451                     | Ray Bradbury   |
+| Gravity's Rainbow                 | Thomas Pynchon |
++----------------------------------------------------+
+
+>> puts Book.report_table(:all, :only => [:title], :methods => [:author_name])
++----------------------------------------------------+
+|               title               |  author_name   |
++----------------------------------------------------+
+| Why's (Poignant) Guide to Ruby    | _why           |
+| Flow My Tears, The Policeman Said | Philip K. Dick |
+| Farenheit 451                     | Ray Bradbury   |
+| Gravity's Rainbow                 | Thomas Pynchon |
++----------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+Any options that acts_as_reportable doesn't recognize will be passed along to the ActiveRecord +find+ method, so you can use all of the options allowed by +find+.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :only => :title,
+     :include => { :author => { :only => :name } },
+     :order => "authors.name")
++----------------------------------------------------+
+|               title               |  author.name   |
++----------------------------------------------------+
+| Flow My Tears, The Policeman Said | Philip K. Dick |
+| Farenheit 451                     | Ray Bradbury   |
+| Gravity's Rainbow                 | Thomas Pynchon |
+| Why's (Poignant) Guide to Ruby    | _why           |
++----------------------------------------------------+
+
+>> puts Book.report_table(:all, :only => :title,
+     :include => { :author => { :only => :name } },
+     :conditions => "authors.name like '_why'")
++----------------------------------------------+
+|             title              | author.name |
++----------------------------------------------+
+| Why's (Poignant) Guide to Ruby | _why        |
++----------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+Note that acts_as_reportable uses the association name to specify included models
+and to qualify any attributes returned from those models, but when you include
+SQL in your query, you need to use the table names. Thus, the above example uses
++:include => :author+, but +:conditions => "authors.name..."+.
+
+=== Filtering and Transforming Data ===
+
+You can use the :filters and :transforms methods to limit and/or modify the data that is returned in the table.  You can pass a proc or array of procs to each of these options.
+
+The :filters option, as its name implies, allows you to filter the data that will make up the table.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :only => [:id, :title],
+     :filters => lambda {|r| r["id"] > 1 })
++----------------------------------------+
+| id |               title               |
++----------------------------------------+
+|  2 | Flow My Tears, The Policeman Said |
+|  3 | Farenheit 451                     |
+|  4 | Gravity's Rainbow                 |
++----------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+The :transforms option can be used to perform transformations on the data being supplied to the table.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :only => [:id, :title],
+     :transforms => lambda {|r| r["id"] = "#{Author.find(r["id"]).name}" })
++----------------------------------------------------+
+|       id       |               title               |
++----------------------------------------------------+
+| _why           | Why's (Poignant) Guide to Ruby    |
+| Philip K. Dick | Flow My Tears, The Policeman Said |
+| Ray Bradbury   | Farenheit 451                     |
+| Thomas Pynchon | Gravity's Rainbow                 |
++----------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+=== Eager Loading of Data ===
+
+By default, acts_as_reportable will pass any :include options to the ActiveRecord +find+ method that is used behind the scenes to collect your data.  However, if you want to turn off eager loading, you can do so with the :eager_loading option by setting it to a value of false.
+
+>> puts Book.report_table(:all, :include => :author, :eager_loading => false)
+
+=== Setting Default Options ===
+
+The +acts_as_reportable+ class method also takes all of the same options as the +report_table+ method, allowing you to set default options for your reports. 
+
+------------------------------------------------------------------------------------------------------
+  class Book < ActiveRecord::Base
+    acts_as_reportable :except => [:id, :author_id]
+    belongs_to :author
+  end
+------------------------------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table
++-----------------------------------+
+|               title               |
++-----------------------------------+
+| Why's (Poignant) Guide to Ruby    |
+| Flow My Tears, The Policeman Said |
+| Farenheit 451                     |
+| Gravity's Rainbow                 |
++-----------------------------------+
+------------------------------------------------------------------------------------------------------
+
+However, this only works if you don't use any of the options that acts_as_reportable recognizes.  Any of the four options (:only, :except, :methods, and :include) passed to the +report_table+ method will disable the default options passed to the class method.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :methods => :author_name)
++---------------------------------------------------------------------+
+|  author_name   |               title               | id | author_id |
++---------------------------------------------------------------------+
+| _why           | Why's (Poignant) Guide to Ruby    |  1 |         1 |
+| Philip K. Dick | Flow My Tears, The Policeman Said |  2 |         2 |
+| Ray Bradbury   | Farenheit 451                     |  3 |         3 |
+| Thomas Pynchon | Gravity's Rainbow                 |  4 |         4 |
++---------------------------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+You can still use the ActiveRecord options.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, :conditions => "title like '%Poignant%'")
++--------------------------------+
+|             title              |
++--------------------------------+
+| Why's (Poignant) Guide to Ruby |
++--------------------------------+
+------------------------------------------------------------------------------------------------------
+
+You can access the options you passed to the +acts_as_reportable+ class method with the +aar_options+ attribute.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table(:all, Book.aar_options.merge(:methods => :author_name))
++----------------------------------------------------+
+|  author_name   |               title               |
++----------------------------------------------------+
+| _why           | Why's (Poignant) Guide to Ruby    |
+| Philip K. Dick | Flow My Tears, The Policeman Said |
+| Ray Bradbury   | Farenheit 451                     |
+| Thomas Pynchon | Gravity's Rainbow                 |
++----------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+=== Find by SQL ===
+
+Analogous to the ActiveRecord +find_by_sql+ method, acts_as_reportable provides a +report_table_by_sql+ method.
+
+------------------------------------------------------------------------------------------------------
+>> puts Book.report_table_by_sql("SELECT * FROM books")
++-----------------------------------+
+|               title               |
++-----------------------------------+
+| Why's (Poignant) Guide to Ruby    |
+| Flow My Tears, The Policeman Said |
+| Farenheit 451                     |
+| Gravity's Rainbow                 |
++-----------------------------------+
+------------------------------------------------------------------------------------------------------
+
+=== Related Resources / Digging Deeper ===
+           
+The +report_table+ and +report_table_by_sql+ methods return +Ruport::Data::Table+ objects, so you can use the returned tables just as you would if you created them by any other method.
+
++Ruport::Query+ footnote:[query] provides a raw SQL mechanism if you need legacy integration or wish to use existing queries without mapping to ActiveRecord.

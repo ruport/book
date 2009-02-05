@@ -1,6 +1,6 @@
 == More Report Formatting ==
 
-==== Introduction ====
+=== Introduction ===
 
 Now that you've seen the basics of report formatting, let's look at one of PayR's
 slightly more complicated reports. In general, by supplying an employee and range
@@ -18,7 +18,7 @@ different graphing libraries and in this case we used the Gruff library.
 Currently, Ruport only provides integration with Gruff's line graphs, but since
 that's what we plan to use for this report, it will work for us.
 
-==== A Basic Controller and Formatter ====
+=== A Basic Controller and Formatter ===
 
 Before we describe how to use the graphing library, let's get the basics
 in place for the report. We'll develop the report iteratively, to show how you
@@ -55,7 +55,7 @@ dates, we will assume that the code (in the controller) provides an employee id,
 start date, and end date as options to the controller. From there, we should be
 able to obtain all the other data we need.
 
-==== Adding Text ====
+=== Adding Text ===
 
 The first items on the page are the heading "Employee Times By Week" and the
 name of the employee. This report also uses the Employee model as the basis for
@@ -120,7 +120,7 @@ to the method. The other techniques, options.text_format and templates, are best
 saved for situations where you have a setting that is global to the document or
 at least is used for a significant portion of it.
 
-==== Adding a Table ====
+=== Adding a Table ===
 
 Now that all of the plain text is added to the report, we can add the graph and
 the table. We will start with the table since it uses techniques that we've seen
@@ -222,7 +222,7 @@ per week, keyed on the beginning date of each week.
   end
 ------------------------------------------------------------------------------------------------------
 
-====  Adding a Graph ====
+=== Adding a Graph ===
 
 Now that the report contains the text and table, we can add the graph to the
 page. This doesn't require anything much different than what you've already seen,
@@ -327,7 +327,7 @@ positioned below it. We need to move the cursor to where we want the table to
 start, so we move it (in the negative direction) down an amount equal to the
 height of the graph plus the defined padding.
 
-==== Adding a Border ====
+=== Adding a Border ===
 
 The final step in creating our report is to add the page border. We want this to
 be a double border around the whole page. The controller doesn't change for this
@@ -432,7 +432,7 @@ rewrite the relevant sections of the report as follows:
   end
 ------------------------------------------------------------------------------------------------------
 
-==== Rendering the Report ====
+=== Rendering the Report ===
 
 Now that the border is drawn, our report is complete. To finish the discussion of
 this report, let's see the controller method used to generate the report.

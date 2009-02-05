@@ -1,7 +1,5 @@
 == Preface ==
 
-=== What is Ruport Anyway? ===
-
 How often have you, as a developer, needed to create a business report from some
 random data, format it to look good in the process, and complete it within a
 tight timeline? Did you have fun doing it? Well, we won't claim that Ruport can
@@ -123,3 +121,22 @@ Patrice De Saint Steban, and Marshall T. Vandegrift
 
 Finally, thank you to those who pre-ordered the book and provided feedback.  The
 book is better because of your efforts.
+
+=== Copyright Information ===
+
+This book was written by Gregory Brown and Michael Milner with the help of the Ruport community.       
+
+Original print typesetting produced by Dinko Mehinovic, conversion to asciidoc
+by Chenoa Siegenthaler.
+
+Copyright (c)  2007-2009 Gregory Brown and Michael Milner
+
+Self-published by Gregory Brown and Michael Milner
+
+This book is released under the Creative Commons Attribution-Share Alike 
+3.0 Unported License.  For details, please see:
+
+http://creativecommons.org/licenses/by-sa/3.0/      
+
+The latest stable version of this book can always be found at: http://ruportbook.com
+If you'd like to contribute, the sources for the text are hosted at: http://github.com/ruport/book

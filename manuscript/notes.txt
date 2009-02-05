@@ -1,0 +1,7 @@
+ch5 ln 65, 296 -- heading 4?  number or no?
+
+ch9 ln 173: < invoice > (does it show up correctly in the finished version?)
+
+ch10 ln 268 -- what the hell is that supposed to be?
+
+Some things don't end up quite right, such as ch5 -- an image is pushed to the next page, leaving a ton of empty space.  And I've noticed several individual lines looking kind of wrong.  Such as ch9 ln 173 (pg 64 in the PDF, 3/4 down the page) < invoice > is split up.  I noticed something else too, briefly, forget what it was but it might be a good idea to look through the text for things like that and fix them...somehow...

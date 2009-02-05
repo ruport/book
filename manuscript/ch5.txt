@@ -1,0 +1,515 @@
+== Ad-hoc Reporting with +rope+ ==
+
+In the last few chapters, you've seen how deeply Ruport can be extended.
+You've also probably caught a glimpse of how it is reasonably easy to get
+everything wired up in Rails application without acquiring a tacked-on feel.
+
+In this chapter, we'll turn all of those concepts on their head, and cover what
+Ruport was originally designed for: quick and dirty ad-hoc reporting.  Though
+the following example has been simplified to make it easier on the eyes, I'm
+sure you can imagine plenty of scenarios where you want a quick CSV report
+without much hassle, and that's what you'll see how to do here.
+
+We're going to take a look at how to use ruport-util's code generator, +rope+,
+to quickly generate configuration files and reports for a standalone 
+environment.  We'll then make loose ties back into our Rails application so we
+can still make use of our models there.  Once we get things set up, we'll create
+a simple report which compares our data from PayR to a MySQL database that
+contains appointment data.
+
+Our report will show us when scheduled vacation days in PayR conflict with
+employee appointments.  The output format will be a simple CSV of names and 
+dates, which will be emailed to managers on a nightly basis.  Though we could
+have done all of this within our Rails application, the idea here is we may
+end up doing a whole lot more of these ad-hoc reports, and we want them to be
+largely independent of the Rails app itself for simplicity.
+         
+=== Generating and Configuring a +rope+ Application ===    
+         
+We start by running the +rope+ command and creating a simple skeleton in the +lib/+
+directory of PayR.
+
+------------------------------------------------------------------------------------------------------           
+$ rope lib/nightly_reports
+creating directories..
+  lib/nightly_reports/test
+  lib/nightly_reports/config
+  lib/nightly_reports/output
+  lib/nightly_reports/data
+  lib/nightly_reports/data/models
+  lib/nightly_reports/lib
+  lib/nightly_reports/lib/reports
+  lib/nightly_reports/lib/controllers
+  lib/nightly_reports/sql
+  lib/nightly_reports/util
+creating files..
+  lib/nightly_reports/lib/reports.rb
+  lib/nightly_reports/lib/helpers.rb
+  lib/nightly_reports/lib/controllers.rb
+  lib/nightly_reports/lib/templates.rb
+  lib/nightly_reports/lib/init.rb
+  lib/nightly_reports/config/environment.rb
+  lib/nightly_reports/util/build
+  lib/nightly_reports/util/sql_exec
+  lib/nightly_reports/Rakefile
+  lib/nightly_reports/README  
+------------------------------------------------------------------------------------------------------
+
+We now need to configure our database connections and set up a mail server.
+We do this in the projects +config/environment.rb+.  Keep in mind that
+this is your +rope+ application's environment file, not the Rails app.
+
+Let's look at the full config file first, then we'll check it out piece by 
+piece in more detail.
+                    
+*+lib/nightly_reports/config/environment.rb+*
+
+------------------------------------------------------------------------------------------------------
+  require "ruport"    
+
+  RAILS_ROOT = File.dirname(__FILE__) + "/../../.."
+
+  Ruport::Query.add_source :default, :user => "root",
+                                     :dsn  => "dbi:mysql:dental_db"  
+
+
+  Ruport::Mailer.add_mailer(:default,
+    :host => "smtp.gmail.com",
+    :address => "test@gmail.com",
+    :user => "test@gmail.com",
+    :password => "alpha123",
+    :auth_type => :plain,
+    :port => 587      
+  )              
+ 
+  require "active_record"
+  require "ruport/acts_as_reportable"
+
+  require "#{RAILS_ROOT}/config/environment"
+------------------------------------------------------------------------------------------------------
+
+We first establish the location of the root of our rails app as a convenience.
+Since this isn't done for us by +rope+, we need to define it ourselves:
+
+  RAILS_ROOT = File.dirname(__FILE__) + "/../../.."   
+ 
+We then establish our connection to a MySQL database.  Though configuration
+details can get more interesting than this, we're using the most simple case 
+here:
+
+  Ruport::Query.add_source :default, :user => "root",
+                                     :dsn  => "dbi:mysql:dental_db"
+
+Since Ruport uses RubyDBI under the hood, the DSN is just a string that DBI uses
+to establish a connection.  Here we're telling it to use the MySQL driver, and
+attach to a database called +dental_db+ on the localhost using the MySQL
+root user.              
+
+From here, we establish our SMTP settings, since we'll be mailing the report
+automatically:
+
+------------------------------------------------------------------------------------------------------
+  Ruport::Mailer.add_mailer(:default,
+    :host => "smtp.gmail.com",
+    :address => "test@gmail.com",
+    :user => "test@gmail.com",
+    :password => "alpha123",
+    :auth_type => :plain,
+    :port => 587      
+  )              
+------------------------------------------------------------------------------------------------------
+
+This shows pretty much every option you might need to establish an SMTP 
+connection.  Your actual configuration may be much more simple.  However, the
+fact that we're using GMail complicates things a bit, and though we won't go into
+details here, you can check +lib/init.rb+ for details footnote:[+Net::SMTP+ has some issues, which
+are addressed by a monkey-patch from Stephen Chu. We found this fix at: http://www.stephenchu.com/2006/06/how-to-use-gmail-smtp-server-to-send.html].
+
+Once we've established our email settings, we take a little shortcut to get our
+app working with our Rails models:
+ 
+------------------------------------------------------------------------------------------------------
+  require "active_record"
+  require "ruport/acts_as_reportable"
+
+  require "#{RAILS_ROOT}/config/environment"
+------------------------------------------------------------------------------------------------------
+
+This establishes a connection to the Rails database and lets us skip a bunch of
+hard wiring of model files and manual loading of dependencies.  It's certainly
+a hack, so your mileage may vary.  You'll need to set your RAILS_ENV environment 
+variable in whatever script ultimately runs the scheduled report, but it will 
+default to development, which is what we're looking for at this point anyway. 
+
+With all of this stuff together, we can do a quick sanity check to make sure
+things are working:
+ 
+------------------------------------------------------------------------------------------------------
+$ irb -Ilib -rlib/init
+
+>> puts Ruport::Query.new("describe appointments").result
++------------------------------------------------------------+
+|      Field       |   Type   | Null | Key | Default | Extra |
++------------------------------------------------------------+
+| provider_id      | char(20) | YES  |     |         |       |
+| patient_id       | int(11)  | YES  |     |         |       |
+| appointment_time | datetime | YES  |     |         |       |
++------------------------------------------------------------+
+=> nil      
+
+>> Employee.column_names
+=> ["id", "first_name", "last_name", "username", ...]
+------------------------------------------------------------------------------------------------------
+
+Perfect!  Shows that both our raw access to the MySQL database and the hooks
+into our Rails application are working.  We can now move on to bigger and better
+things.
+
+=== Developing a Simple CSV Report ===
+
+Applications generated with +rope+ have a Rakefile based interface, so
+we can use that to generate our report file.   
+       
+------------------------------------------------------------------------------------------------------
+$ rake build report=vacation
+
+reports file: lib/reports/vacation.rb
+test file: test/test_vacation.rb
+class name: Vacation
+------------------------------------------------------------------------------------------------------
+
+This simply generates a place for tests and a simple boilerplate file for a
+report.  Actually, +rope+ can generate a lot more stuff footnote:[See the +rope+ cheatsheet, starting on page XXX], but this is all we'll
+need for now.
+
+The report definition is quite minimal at first, looking like this:
+
+------------------------------------------------------------------------------------------------------
+  require "lib/init"
+  class Vacation < Ruport::Report
+
+    def renderable_data(format)
+
+    end
+
+  end
+------------------------------------------------------------------------------------------------------ 
+
+If you've worked with +Ruport::Controller::Hooks+ footnote:[Custom Controller Logic, Section __, Page ___] before, this might look
+somewhat familiar.  However, if you haven't, no worries.
+
+We can start with a simple example to help clarify things, then take a look at
+the full report.
+ 
+------------------------------------------------------------------------------------------------------
+require "lib/init"
+class Vacation < Ruport::Report
+   
+  renders_as_table
+
+  def renderable_data(format)
+     Table(%w[a b c]) << [1,2,3] << [4,5,6]
+  end
+  
+end 
+
+Vacation.generate do |report| 
+  report.save_as "output/vacation.csv" 
+  report.send_to("gregory.t.brown@gmail.com") do |m|
+    m.subject = "Vacation Conflicts Report"
+    m.attach "output/vacation.csv"
+  end
+end 
+------------------------------------------------------------------------------------------------------
+
+As you can see here, the +Ruport::Report+ class just provides some helper
+methods to make producing reports a little easier.
+
+The first thing to notice is our +renders_as_table+ call.  What we are
+telling our report object here is that it will pass the results of 
++renderable_data+ to Ruport's table controller.  This means it expects
+the return value to be a +Ruport::Data::Table+, 
+or at least duck type as one.  
+
+Here we just use the defacto-standard Ruport junk data to show it's hooked up:
+
+------------------------------------------------------------------------------------------------------
+  def renderable_data(format)
+     Table(%w[a b c]) << [1,2,3] << [4,5,6]
+  end
+------------------------------------------------------------------------------------------------------
+
+If we wanted to use a different controller, there are macros defined for those
+as well:
+  
+  * +renders_as_row+
+  * +renders_as_group+
+  * +renders_as_grouping+
+  * +renders_as_graph+ (via ruport-util)
+
+You can also use any controller you'd like, via the +renders_with()+ command.  In
+the spirit of keeping things simple, we'll stick with table rendering for now.
+
+The final bit of this simplified report is the code that actually generates and
+emails the CSV:
+
+------------------------------------------------------------------------------------------------------
+  Vacation.generate do |report| 
+    report.save_as "output/vacation.csv" 
+    report.send_to("gregory.t.brown@gmail.com") do |m|
+      m.subject = "Vacation Conflicts Report"
+      m.attach "output/vacation.csv"
+    end
+  end
+------------------------------------------------------------------------------------------------------
+
+As you've seen in previous examples, Ruport is capable of inferring which 
+formatter to used based on the file name you give it. The code here simply tells
+Ruport to render a CSV from the results of +renderable_data+, and then
+email it as an attachment to the address specified.
+
+If we wanted to do some format-specific hackery, we could use the +format+
+argument passed to +renderable_data+ which in this case would evaluate to +:csv+.
+Though this can be handy, we won't need it here, so we'll leave that as an 
+exercise to the reader.
+
+If you wanted to try this report out, it's already functional, and you can run
+it via rake:
+
+  $ rake run report=vacation
+
+This will produce a file in the +output+ folder with a rather trivial CSV:
+
+------------------------------------------------------------------------------------------------------
+a,b,c
+1,2,3
+4,5,6
+------------------------------------------------------------------------------------------------------
+
+This file will also be emailed to the address we specified to +send_to()+.
+
+If you've understood the code so far, you'll have no trouble understanding the
+real report, which just adds some business logic and database access on top of
+this basic idea of report objects.  Let's take a look at it as a whole and then
+break it down:
+     
+*+lib/nightly_reports/lib/reports/vacation.rb+*
+
+------------------------------------------------------------------------------------------------------
+  require "lib/init"          
+  class Vacation < Ruport::Report
+
+    renders_as_table
+
+    def renderable_data(format)  
+      Table("Employee", "Conflicted Date") do |csv_out|   
+        payr_data.each do |employee_id, data|
+          times = scheduling_data_for_employee(employee_id)    
+          conflicts = data.select { |r| times.include?(r.date) } 
+          conflicts.each { |r| csv_out << [r["employee.name"], r["date"]] }
+        end      
+      end      
+    end                                                
+
+    def payr_data  
+      Grouping(
+        OtherTime.report_table(:all,
+          :conditions => ["category = 'Vacation' and date between ? and ?",
+                        1.day.from_now, 7.days.from_now],
+          :include => { :employee => { :methods => "name" } },
+          :transforms => lambda { |r| r["date"] = r["date"].to_date } ), 
+        :by => "employee.employee_id")   
+    end
+
+    def scheduling_data_for_employee(eid)      
+      result = query "select provider_id, appointment_time from appointments where 
+                      provider_id = ? and appointment_time between ? and ?",
+                        :params => [eid,1.day.from_now, 7.days.from_now]
+
+      result.map { |e| e["appointment_time"].to_date }
+    end
+
+  end
+
+  Vacation.generate do |report|
+    report.save_as "output/vacation_conflicts.csv"           
+    report.send_to "gregory.t.brown@gmail.com" do |m|
+      m.subject = "Vacation Conflicts"   
+      m.attach "output/vacation_conflicts.csv"  
+    end
+  end
+------------------------------------------------------------------------------------------------------
+
+Working from the high level down, let's take a look at what our +renderable_data+
+code is doing:
+
+------------------------------------------------------------------------------------------------------
+  def renderable_data(format)  
+    Table("Employee", "Conflicted Date") do |csv_out|   
+      payr_data.each do |employee_id, data|
+        times = scheduling_data_for_employee(employee_id)    
+        conflicts = data.select { |r| times.include?(r.date) } 
+        conflicts.each { |r| csv_out << [r["employee.name"], r["date"]] }
+      end      
+    end      
+  end
+------------------------------------------------------------------------------------------------------
+
+You can see right away this is just producing a two field table and returning it:   
+
+------------------------------------------------------------------------------------------------------
+  Table("Employee", "Conflicted Date") do |csv_out|   
+    # ...
+  end 
+------------------------------------------------------------------------------------------------------
+
+This approach of building up a table within a block is mostly just syntactic
+sugar, allowing us to never explicitly assign our table object to a variable,
+since it is immediately passed to the controller.
+
+When we look at the code that's actually populating the table, we find that it's
+pretty simple:
+
+------------------------------------------------------------------------------------------------------
+  payr_data.each do |employee_id, data|
+    times = scheduling_data_for_employee(employee_id)    
+    conflicts = data.select { |r| times.include?(r.date) } 
+    conflicts.each { |r| csv_out << [r["employee.name"], r["date"]] }
+  end
+------------------------------------------------------------------------------------------------------
+
+The +payr_data+ helper returns a grouping object, which is basically vacation
+time records grouped by employee_id.  For each employee, we pull a list of 
+appointment dates via the +scheduling_data_for_employee+ helper.
+
+We then select any vacation times which conflict with these appointments, and
+add a row with the employee name and the vacation date to the table.  If this 
+seems somewhat simple, you won't find the actual database interaction code much
+harder.
+
+Let's take a look at our ActiveRecord interactions first, which we find in 
++payr_data+.
+
+------------------------------------------------------------------------------------------------------ 
+  def payr_data  
+    Grouping(
+      OtherTime.report_table(:all,
+        :conditions => ["category = 'Vacation' and date between ? and ?",
+                       1.day.from_now, 7.days.from_now],
+        :include => { :employee => { :methods => "name" } },
+        :transforms => lambda { |r| r["date"] = r["date"].to_date } ), 
+      :by => "employee.employee_id")   
+  end
+------------------------------------------------------------------------------------------------------
+
+Because this is an ad-hoc report, we are coding a little quicker and dirtier
+than we might if it were a full scale application. In the code above, the first
+thing to notice is that it is simply doing a grouping by the employee_id field.
+
+ Grouping(some_table, :by => "employee.employee_id")
+ 
+In this context, the +some_table+ data is just results from a vanilla +report_table+
+call via Ruport's acts_as_reportable.
+
+------------------------------------------------------------------------------------------------------
+OtherTime.report_table(:all,
+  :conditions => ["category = 'Vacation' and date between ? and ?",
+                 1.day.from_now, 7.days.from_now],
+  :include => { :employee => { :methods => "name" } },
+  :transforms => lambda { |r| r["date"] = r["date"].to_date } 
+------------------------------------------------------------------------------------------------------
+
+Here we are just pulling vacation times within a certain date range, asking for
+it to include the employee association information, and doing a quick 
+transformation from datetime objects to dates, which is necessary to make 
+comparisons later.
+
+From here, you end up with a simple grouping of vacation times by employee_id
+that include the rest of an employee's information.  We can now look at the SQL
+we use to interact with our MySQL database which is not part of the PayR 
+application.
+
+------------------------------------------------------------------------------------------------------
+  def scheduling_data_for_employee(eid)      
+    result = query "select appointment_time from appointments where 
+                    provider_id = ? and appointment_time between ? and ?",
+                      :params => [eid,1.day.from_now, 7.days.from_now]
+
+    result.map { |e| e["appointment_time"].to_date }
+  end
+------------------------------------------------------------------------------------------------------
+
+This code is even eaiser than the PayR data code.  It simply looks up 
+appointment times for a given time period and employee id (called provider_id in
+our MySQL database).
+
+It's worth noting that if the query became larger than a couple lines, Ruport
+understands +query "path/to/my_file.sql"+, among other things.  For our
+needs however, this is more than enough.
+
+When we run this report, we end up with a barebones CSV that shows our
+conflicting Vacation dates.  Output will look something like this:
+
+------------------------------------------------------------------------------------------------------
+Employee,Conflicted Date 
+Gregory Brown,2007-11-29
+Gregory Gibson,2007-12-01  
+Gregory Gibson,2007-12-02 
+Joe Loop,2007-12-03
+------------------------------------------------------------------------------------------------------
+
+We can of course, change this output to HTML, PDF, or Text by changing exactly
+two lines:
+
+------------------------------------------------------------------------------------------------------
+  Vacation.generate do |report|
+    report.save_as "output/vacation_conflicts.txt"           
+    report.send_to "gregory.t.brown@gmail.com" do |m|
+      m.subject = "Vacation Conflicts"   
+      m.attach "output/vacation_conflicts.txt"  
+    end
+  end 
+------------------------------------------------------------------------------------------------------
+
+This is one of the many nice things about working with Ruport as opposed to
+writing one-off scripts that you soon need to throw away rather than build on
+top of.
+
+Now all that remains for this report is to use your favorite scheduling 
+software, perhaps +cron+, to fire this on a nightly basis.  Though we won't
+discuss it here, it's usually as simple as just running the Rakefile with any
+necessary environment variables.
+
+Hopefully this gives you a taste of how +rope+ applications work, and how you 
+can sneak them in to live alongside Rails apps.  Some people love this kind of
+stuff, others prefer to keep tight integration in their Rails app and wouldn't
+want to layer something like this into their projects.  We really leave that
+decision up to you, by design.
+
+When you're using a rope-based Ruport application, it's easy to
+re-use configuration information, make reports build off of each other, and
+also keep your reporting code cleanly separated from the rest of your 
+application.  If you end up with situations where that is important, you might
+consider using some of the techniques shown here.
+            
+=== And That's the End of That Chapter ===
+
+With this, we come to the end of our discussion of PayR.  We encourage you to
+poke around in the source files, because we haven't covered absolutely every 
+use of Ruport, probably not even _most_ of the uses.  However, we hope we've
+given you a strong sense of not just the syntax and raw functionality pertaining
+to Ruport, but also how we develop applications using it.
+
+Though we'll happily admit there are a lot of valid approaches to using Ruport,
+we think that the toolset best reflects how we are using it. If you've gained
+some insight from this discussion about that, we think you'll find your work a
+whole lot easier. 
+
+The remainder of the book is a collection of more nuts-and-bolts material. 
+ 
+We've compiled several cheatsheets about common Ruport topics, which are 
+designed to be both a quick reference guide and a way to explore features you
+have not yet worked with.  We hope that combined with the detailed 
+explainations of PayR, these cheatsheets will provide a solid base for using
+Ruport in your day to day work.
+

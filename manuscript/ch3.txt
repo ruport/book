@@ -1,6 +1,6 @@
 == Report Formatting ==
 
-==== Introduction ====
+=== Introduction ===
 
 One of the reports needed for PayR is a call-in sheet that lists employees,
 grouped by type, and their hours over a two week period.  Below is the formatted
@@ -16,7 +16,7 @@ them in +app/reports+ and others in +lib+, so that decision is ultimately up to
 you for your own projects. The code for all of the reports in PayR is located in
 +app/reports+. Each class has its own file to make browsing easy.
 
-==== Data Model ====
+=== Data Model ===
 
 Before we begin to define the report, let's take a look at the model definitions
 to get an idea of how the data is structured and how the models are associated
@@ -49,7 +49,7 @@ For the report, we need to get all of the employees and calculate some of the
 data to be displayed. Then we need to group all of the employees by type and
 display them, formatted as shown above.
 
-==== Ruport Controllers ====
+=== Ruport Controllers ===
 
 In Ruport, the first step to achieving formatted output is to define a controller
 for the report. This is the component that establishes the steps that
@@ -80,7 +80,7 @@ If a method for a particular stage isn't found, Ruport will simply ignore it.
 This becomes useful when you want to use a single controller with multiple
 formatters, some of which might not implement all of the stages.
 
-==== Data Collection ====
+=== Data Collection ===
 
 Now let's look at the data we need. As shown above, the report has the following
 column headings: "_Employee Type_", "_Employee_", "_Week 1_",
@@ -111,7 +111,7 @@ employee time sheet data, beginning with the week containing the start date.
 
 What this means for our report is that we need some way of passing in the start date as an option.
 
-==== Setting Options and Data ====
+=== Setting Options and Data ===
 
 To do so, we make use of Ruport's +options+ object. Each controller and formatter
 share an +options+ object, implemented as a subclass of OpenStruct. This allows you to use
@@ -189,7 +189,7 @@ Grouping. We use the Kernel method +Grouping+ to create it. This method takes tw
 paramaters; a table or group that will be used as the source of data to create
 the Grouping and the name of the column or columns to group by.
 
-==== Using the +setup+ Method ====
+=== Using the +setup+ Method ===
 
 At this point we have finished populating the table that will be the basis for
 the final report. Next, we set this grouping as the controller's data source, as
@@ -222,7 +222,7 @@ of the information supplied to the controller, allowing you to do data
 manipulations or anything else that you might need to accomplish prior to actual
 formatting.
 
-==== Using the Helpers Module ====
+=== Using the Helpers Module ===
 
 We need to add one more thing to the controller before moving on to the formatter.
 Our report is going to have a header that includes the date range. We want these
@@ -266,7 +266,7 @@ mixed in to the formatter (or formatters). This allows you to call any of the
 module's methods in your formatters and satisfies the DRY principle in that we
 only have to define them once.
 
-==== Ruport Formatters ====
+=== Ruport Formatters ===
 
 The next step in creating the output is to define one or more formatters for each
 of the output formats you want to produce. Each one will register itself as the
@@ -371,7 +371,7 @@ shortcut method to render the Grouping as HTML output. The built-in formatters
 define a number of different output styles for groupings, here we specify the
 :justified style.
 
-==== Using Templates ====
+=== Using Templates ===
 
 Now that the controller and formatters are defined, we're ready to actually
 generate the output, right? In fact, we could do so, but let's do one more thing
@@ -438,7 +438,7 @@ simply ignore any options that they don't use. Once we have the template defined
 we will pass its name as the :template option when we render the report and the
 template will be available to the formatter footnote:[See the Ruport Formatting cheatsheet for more details on template usage.].
 
-==== Producing Output ====
+=== Producing Output ===
 
 Now we're finally ready to actually render the output. While there are a number
 of different ways you can accomplish this, let's look at how you might typically

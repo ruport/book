@@ -1,3 +1,6 @@
+Preface
+-------
+
 == Foreword ==
 
 Since 1998 I have been privileged to have many very young and very bright minds from the University of New Haven's Computer Science program work at my consulting business, BTree Technology. Using various programming languages of the day (VB in 1988, C++ in 2000, C# in 2002 and of course Ruby since 2004), I have set many programmers on a single simply-stated quest: to write good reports!
@@ -24,4 +27,4 @@ The process used to create the application you will learn in this book is what I
 
 Please enjoy the book, join the Ruport mailing list, and make suggestions for improving Ruport. 
 
-_Gregory Gibson_
+Gregory Gibson

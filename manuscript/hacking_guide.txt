@@ -1,0 +1,225 @@
+== Ruport Hacking Guide ==
+
+If you've read your way through this book, you probably have a decent grasp on
+how to use Ruport.  However, there is power in knowing what lies under the hood.
+This appendix will help show you how to work against Ruport's bleeding edge,
+and how to hack on the internals as needed.  If you're interested in patching
+Ruport to meet some particular need, or you'd like to make a contribution to
+our community, this is a must read.
+
+=== Running from Ruport's Edge ===
+                        
+The first step to hacking on Ruport is of course to get yourself the latest
+sources.  Things tend to move reasonably fast in Ruport, so working against
+Subversion is a must.  You can always find repository URL listings at 
+code.rubyreports.org, but at the time of writing, the locations of trunk for
+the various components of Ruby Reports were as follows:
+                
+*Ruport*
+
+  http://stonecode.svnrepository.com/svn/ruport/ruport/trunk
+  
+*acts_as_reportable*
+
+  http://stonecode.svnrepository.com/svn/ruport/acts_as_reportable
+  
+*ruport-util*
+
+  http://stonecode.svnrepository.com/svn/ruport-util/trunk
+  
+*Ruport/Rails*
+
+  http://stonecode.svnrepository.com/svn/ruport_rails/                    
+                       
+==== Release Structure ====
+
+All of our packages follow a common release numbering scheme which is meant to 
+easily let our users know what kind of release they are using at a glance.
+
+*Stable Releases:*
+
+------------------------------------------------------------------------------------------------------
+  a.b.c -> a.b.(c+1) : Bug Fixes.  No API Incompatibility (minor)
+  a.b.c -> a.(b+1).c : Feature Enhancements and possible API breakage (major)
+  a.b.c -> (a+1).b.c : Huge Milestone. All bets are off. 
+------------------------------------------------------------------------------------------------------
+
+We always support the latest stable release branch.  As of December 2007
+this was Ruport 1.4, and it resides in +/branches/1.4+.  Once a new major stable 
+release comes out, the branch effectively becomes obsolete.
+
+We try not to use odd numbers for the middle number in our public releases,
+meaning the next stable major release after 1.4.x will likely be 1.6.x
+
+*Beta Releases:*
+
+We will occasionally publish beta gems. They follow the form a.b.rev, where
+rev is the SVN revision the gem is built from.  For example, a beta build of 
+the 1.4 codebase generated from r1224 would become Ruport 1.3.1224
+
+This numbering scheme makes it very easy to tell both which branch the code is
+ultimately going to become a part of, and also approximately what it is in.
+Combined with an svn log of trunk, it shouldn't be too hard to keep track of 
+what is in the beta builds.
+
+=== Preparing A Patch ===
+
+If you'd like to extend Ruport either for your own use or to contribute back
+to the community, you'll find it's easier than you think. 
+
+==== Choose the Right Package ====
+
+Ruport's distribution is split across several packages, and picking the right
+one to patch for your new features will help both make your work easier and
+increase the likelihood that your patch be accepted if you submit it to us.
+
+What follows is a brief description of each package, so that you have a sense
+of where your feature might belong.
+
+*Ruport*
+
+The core Ruport package has become increasingly lean from version to version.
+We now basically think of it as a super lightweight base for building actual
+tools on top of.  With this in mind, we basically have our core data structures,
+some simple controllers, and a few formatters.  As of Ruport 1.4, it should be
+easy for anyone to keep most of Ruport's core in their head, which we think is
+a good thing.  Basically, the only features which belong in Ruport's core are
+the ones so common that most everyone will use them 
+(CSV I/O, Tabular Data Structure) and also the ones that provide a solid base 
+for extension (PDF Formatter).  Most other features belong in the other packages.   
+
+The Ruport package is currently under a release cycle that supports a 
+single stable branch and a main development branch.  Stable branches typically 
+last a couple months before being replaced by newer versions from development.  
+What this basically means is that it sometimes takes a while for changes in the 
+core package to make it out to the general public.
+
+*ruport-util*
+
+The ruport-util package is Ruport's fat cousin, chock full
+of pretty much anything that supports Ruport development.  This means that it
+is an ideal home for somewhat specialized tools or for formatters and data 
+modeling libraries that aren't particularly extensible.  This is also the place
+for any command line utilities.  Two such examples currently in 
+ruport-util are +rope+ and +csv2ods+.     
+
+The ruport-util package is under a much less structured release cycle, in which
+releases typically take place a few days after new functionality is added.
+Given the nature of the package as sort of a collection of different tools, this
+approach seems to work pretty well.  The only restrictions are that
+ruport-util's trunk should run against the latest stable version of Ruport, not
+a development version.  When work needs to be done against the bleeding edge,
+we'll usually raise branches.
+
+*acts_as_reportable*
+
+Formerly part of core Ruport, acts_as_reportable is our ActiveRecord 
+integration.  Essentially, anything specific to AR belongs in this package.
+
+Though you can likely expect more stability than ruport-util, 
+acts_as_reportable is also on a rolling release schedule and may
+change over time.  
+
+*Ruport/Rails*
+
+Of the four packages mentioned here, Ruport/Rails is the only 'unofficial'
+package.  This is a Rails plugin and is meant for any non-AR Rails helpers.  
+If you have an extension that is rather specific to Rails that needs a home, 
+this may be the right place.
+
+This package is SVN-only, and does not have a formal release schedule.  It is
+also still considered to be experimental, but Mike uses it in his day to day
+work.   
+                                                 
+==== Be a Good Patcher ====
+
+Once you've decided which package you'd like to patch, it's time to dig in.                           
+
+*Get up to date*
+
+A first step to take before working on a patch is to check the development
+version of the package you're working on to see if it doesn't already have the
+feature you need.  We don't announce every feature while we're working on it,
+so glancing at the svn log is always a good idea.
+
+*Get in contact*
+
+Once you've verified that your problem still needs solving, please contact us
+on the ruport-dev mailing list: http://groups.google.com/group/ruport-dev    
+
+This list is mostly for contributors and developers, and it is where the
+implementation details of new features can be discussed.  We will also happily
+review any patches you post to this list.  Usually, the best way to get a 
+feature into any of our packages is to send a short email describing the 
+problem, maybe with some code, or if not, just example usage.
+
+We encourage folks not to worry about perfecting their code before starting up
+a discussion with us.  You'll find it a whole lot easier to get a patch together
+with a couple Ruport developers helping you along.
+
+*Get your patch applied*
+
+If you're just working on an extension for personal use and don't want to worry
+about refining it for use by the general community, that's fine.  However, if
+you want your patch to get integrated into the project, there are a few simple
+guidelines.
+                                             
+  * Always send unified diff, as output by +svn diff+.
+  * Try to keep your patches small and atomic.            
+  * Try to follow good Ruby coding practices, and stick to two space indent.
+  * Don't let your patch break our test suite.
+  * Make sure your patch has tests of its own, especially if it's a bug fix.      
+
+Once you've prepared a diff file, you're welcome to open up a ticket in Trac
+and attach the file there.  You can also send it to the ruport-dev mailing list.
+However, if you've put it in the tracker, please mail a link to the mailing list
+so we can discuss the patch there. 
+
+We have an open commit policy, so all it takes is one accepted patch to get
+you full access to all four packages.  So far, this has worked out great with
+our contributors, and hopefully lets people know that anyone is welcome to help
+make Ruport better.
+
+=== Power Tools for Ruport Hackers ===
+
+Though this gives you a basic overview of how the project is laid out 
+development-wise, it's worth mentioning some interesting bits that are in the 
+core Ruport gem and are worth investigating if you're thinking of extending
+things.  Listed below are several of the developer conveniences that might
+be useful in your work:
+                     
+==== Data Model ====
+
+  * +Data::Feeder+ can wrap any object that implements +<<+ and +feed_element+.
+  * Table accepts +:record_class+, which allows you to use Record 
+      subclasses or duck typed objects.  A subclass of Table could set these
+      automatically.  For reference see the way graphs are implemented in ruport-util.
+  * Records can be reindexed to point at a new set of attribute names, and
+    attributes can be deleted via private functions.      
+
+==== Formatting System ====
+
+  * +Formatter::RenderingTools+ contains the definitions for the render_* helpers.
+    You can easily use +render_helper()+ in this module to create your own wrappers.
+  * You can override +Controller#run()+ to completely change the way the rendering process works.
+  * You can use Controller's build method to create a controller instance and tie it to a formatter.
+    This allows you to persist a controller instance rather than generating them on the fly, among other things.
+  * The PDF formatter has a number of private methods that do primitive manipulations on the document,
+    some of these may come in handy for designing advanced components.  
+  * +Controller::Hooks+ lets you tie any data structure to the formatting system.
+
+Though these features are quite advanced, they make it possible to significantly
+extend and even modify the way core Ruport works without having to uproot the
+underlying codebase.  We'd be quite excited to see these used to solve interesting
+problems.
+
+
+
+
+
+
+
+
+
+
+

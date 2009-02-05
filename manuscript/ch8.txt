@@ -1,0 +1,131 @@
+== Cheatsheet: Using +Ruport::Query+ ==
+
+Ruport's Query module provides support for using Ruby DBI for data collection.  It allows you to connect to any of the databases supported by DBI and execute arbitrary SQL queries.  You can then package the results into a Ruport +Data::Table+ or obtain raw +DBI::Row+ data.  In addition to providing the interface to DBI, +Ruport::Query+ also provides assistance with configuration of data sources as well as some methods for traversing the data.  This cheatsheet covers the basic functionality of Query and some common use cases.
+
+=== Configuration ===
+
++Ruport::Query+ provides methods for storing configuration information for later use.  You can add a data source by using the +add_source+ method.  The first parameter names the data source and the second parameter is a hash that defines the connection using the :dsn, :user, and :password options.
+
+------------------------------------------------------------------------------------------------------
+  Ruport::Query.add_source :default,
+                           :dsn => "dbi:mysql:my_db", 
+                           :user => "mike",
+                           :password => "chunkybacon"
+
+  Ruport::Query.add_source :test,
+                           :dsn => "dbi:mysql:other_db",
+                           :user => "tester",
+                           :password => "blinky"
+------------------------------------------------------------------------------------------------------
+
+The default data source (named :default) will be used by any queries that don't either specify data source parameters or reference another named data source.  You can retrieve all of the available named sources using the +sources+ method, which returns them in a hash keyed by the source names.
+
+  Ruport::Query.sources
+
+You can retrieve the default data source if it's defined, using the +default_source+ method.
+
+  Ruport::Query.default_source
+
+=== Constructing the Query ===
+
+You construct a query object using the +Ruport::Query+ constructor.  As mentioned earlier, if you don't specify any connection parameters, Ruport will attempt to use the default data source (or error if there is no default defined).  You can get a Ruport table containing the results of running the query using the +result+ method.
+
+------------------------------------------------------------------------------------------------------
+>> query = Ruport::Query.new("SELECT * FROM books")
+>> puts query.result
++----------------------------------------------------+
+| id |               title               | author_id |
++----------------------------------------------------+
+|  1 | Why's (Poignant) Guide to Ruby    |         1 |
+|  2 | Flow My Tears, The Policeman Said |         2 |
+|  3 | Farenheit 451                     |         3 |
+|  4 | Gravity's Rainbow                 |         4 |
++----------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+If you want to use a different named data source, you can specify it using the :source option to the constructor.
+
+>> query = Ruport::Query.new("SELECT * FROM books", :source => :my_source)
+
+If you haven't set up your data source parameters as a named source, you can also specify the parameters directly to the constructor.
+
+>> query = Ruport::Query.new("SELECT * FROM books", :dsn => "dbi:mysql:my_db",
+     :user => "mike", :password => "chunkybacon")
+
+You can also construct your query using SQL stored in a file.  If the filename ends with ".sql", you can simply pass the filename to the constructor.  Otherwise, you need to use the :file option with the filename.
+
+------------------------------------------------------------------------------------------------------
+>> query1 = Ruport::Query.new("my_query.sql")
+>> query2 = Ruport::Query.new(:file => "other_query")
+------------------------------------------------------------------------------------------------------
+
+If you don't want your data to be packaged into a +Ruport::Data::Table+, but would rather have raw +DBI::Row+ objects, then you can use the :row_type option to the constructor with the value of :raw.
+
+>> query = Ruport::Query.new("SELECT * FROM books", :row_type => :raw)
+
+=== Using the Query ===
+
+Once you have a query object, you can begin to use it to obtain results.  As demonstrated previously, you can use the +result+ method to get a +Ruport::Data::Table+ containing the results of executing the query.
+
+------------------------------------------------------------------------------------------------------
+>> query = Ruport::Query.new("SELECT authors.name, books.title FROM
+     authors JOIN books ON authors.id = books.author_id")
+>> puts query.result
++----------------------------------------------------+
+|      name      |               title               |
++----------------------------------------------------+
+| _why           | Why's (Poignant) Guide to Ruby    |
+| Philip K. Dick | Flow My Tears, The Policeman Said |
+| Ray Bradbury   | Farenheit 451                     |
+| Thomas Pynchon | Gravity's Rainbow                 |
++----------------------------------------------------+
+------------------------------------------------------------------------------------------------------
+
+If you only want to execute a query and not return any results, then you can use the +execute+ method.
+
+------------------------------------------------------------------------------------------------------
+>> query = Ruport::Query.new("INSERT INTO authors (name)
+     VALUES ('James Joyce')")
+>> query.execute
+------------------------------------------------------------------------------------------------------
+
+You can obtain a CSV dump of the data returned by the query using the +to_csv+ method.
+
+------------------------------------------------------------------------------------------------------
+>> query = Ruport::Query.new("SELECT authors.name, books.title FROM
+     authors JOIN books ON authors.id = books.author_id")
+>> puts query.to_csv
+
+name,title
+_why,Why's (Poignant) Guide to Ruby
+Philip K. Dick,"Flow My Tears, The Policeman Said"
+Ray Bradbury,Farenheit 451
+Thomas Pynchon,Gravity's Rainbow
+------------------------------------------------------------------------------------------------------
+
+You can iterate through the result set, returning the rows one by one, using the +each+ method.
+
+------------------------------------------------------------------------------------------------------
+>> query = Ruport::Query.new("SELECT * FROM books WHERE
+     title = 'Farenheit 451'")
+>> query.each {|row| puts row.class }
+Ruport::Data::Record
+------------------------------------------------------------------------------------------------------
+
+You can also obtain a Generator object with the result set, using the +generator+ method.
+
+------------------------------------------------------------------------------------------------------
+>> query = Ruport::Query.new("SELECT * FROM books WHERE
+     title = 'Farenheit 451'")
+>> g = query.generator
+>> while g.next?; puts g.next.class; end
+Ruport::Data::Record
+------------------------------------------------------------------------------------------------------
+
+=== Related Resources / Digging Deeper ===
+
+For a complete list of DSN configurations as well as installation instructions for working with various databases, you’ll want to consult the RubyDBI documentation.
+ 
+Ruport's acts_as_reportable module provides similar data collection functionality using ActiveRecord footnote:[See acts_as_reportable cheatsheet.].
+
+The +generator+ method returns a Generator object - you might want to read the Ruby Standard Library API docs to see what you can do with it.

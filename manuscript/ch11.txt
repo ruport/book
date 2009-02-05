@@ -1,0 +1,218 @@
+== Cheatsheet: Adding Logic to Custom Controllers ==
+
+Custom controllers in Ruport are often used to define the process your
+Formatters should implement and the options they should handle.  This allows
+you to gain a consistent interface across your formatters, and for many uses
+this is good enough.
+
+When reports are more complex, there is often a need to massage data into 
+a normalized form or make some decisions about how the data should be 
+represented at run time.  Ruport's Controller class offers a number of 
+facilities for the most common scenarios you'll run into.
+
+Here we'll discuss the +Controller#setup+ hook, +Controller::Hooks+ and Formatter
+helpers.
+
+=== Using +setup()+ ===
+
+The setup hook is called after options are processed from the hash
+arguments and block given to your render call.  This means that you
+can easily manipulate the data attribute as well as any of the options
+passed to your controller.
+
+You can also call any methods within your controller subclass 
+as needed.
+
+------------------------------------------------------------------------------------------------------
+  class DocumentController < Ruport::Controller
+    stage :document
+    required_option :text
+
+    def setup
+      text << " for #{username}"
+    end
+
+    def username
+      data[:name].capitalize
+    end
+    
+  end
+
+  class DocumentFormatter < Ruport::Formatter
+
+    renders :example, :for => DocumentController
+    
+    build :document do
+      output << "||" << options.text << "||"
+    end
+
+  end
+
+  puts DocumentController.render_example(
+    :data => { :name => "gregory" },
+    :text => "Sample Text"
+  )
+------------------------------------------------------------------------------------------------------
+*Output:* +||Sample Text for Gregory||+
+
+=== Using +Controller::Hooks+ ===
+
+Ruport tries to be as flexible as possible, and part of that task is making
+it very easy to hook up the formatting system to your custom, non-ruport
+classes.  In the previous example, you can see that DocumentController 
+expects hash-like data.
+
+Below is a simple example of how to make an unlike class still play nice
+with that controller.
+
+------------------------------------------------------------------------------------------------------
+class Person
+
+  include Ruport::Controller::Hooks
+
+  renders_with DocumentController
+
+  def initialize(name)
+    @name = name
+  end
+
+  def renderable_data(format)
+    { :name => @name }
+  end
+
+end
+
+me = Person.new("gregory")
+puts me.as(:example, :text => "Hooks example") 
+------------------------------------------------------------------------------------------------------
+Output: 
+
+||Hooks example for Gregory||
+
+This can be very powerful, as it allows you to do whatever transformations
+you need on many diverse data structures and use a few standard controllers.
+
+=== Using Formatter Helpers ===
+
+Sometimes you will have some methods you want available to all your formatters,
+but you want to leave it up to the individual formatters to decide how to make
+use of them.  You could go about this by explicitly including a module in your
+different formatters.  Because this task is relatively common, Ruport provides
+a shortcut.
+
+If you define a module called Helpers in your controller, it will be mixed into
+the formatter instance at run time.  This allows for controllers to specify 
+different ways of handling specific tasks without clashing.
+
+The simple example below adds a +time()+ helper that gives formatted output of
+the current time and shows it used in multiple formatters.
+
+------------------------------------------------------------------------------------------------------
+  class DocumentController < Ruport::Controller
+    stage :document
+    required_option :text
+
+    def setup
+      text << " for #{username}"
+    end
+
+    def username
+      data[:name].capitalize
+    end
+
+    module Helpers
+      def time
+        Time.now.strftime("%H:%m:%S")
+      end
+    end
+  end
+
+  class DocumentFormatter < Ruport::Formatter
+
+    renders :example, :for => DocumentController
+    
+    build :document do
+      output << "At #{time}, I render ||" << options.text << "||"
+    end
+
+  end
+
+  class DocumentFormatter2 < Ruport::Formatter
+    
+    renders :example2, :for => DocumentController
+
+    build :document do
+      output << "||" << options.text << "||, I rendered this at #{time}"
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+Using our Person object from before:
+
+  puts me.as(:example, :text => "Hooks example") 
+
+Outputs:
+
+  At 22:05:56, I render ||Hooks example for Gregory||
+
+Using the other formatter for the same data:
+
+  puts me.as(:example2, :text => "Hooks example")
+
+Outputs: 
+
+  ||Hooks example for Gregory||, I rendered this at 22:05:14
+
+=== Implicit Helpers for Formatter Selection ===
+
+If you think that this chunk of code seems verbose, you're probably
+looking for our format selection helpers.
+
+------------------------------------------------------------------------------------------------------
+  class DocumentFormatter < Ruport::Formatter
+
+    renders :example, :for => DocumentController
+    
+    build :document do
+      output << "At #{time}, I render ||" << options.text << "||"
+    end
+
+  end
+
+  class DocumentFormatter2 < Ruport::Formatter
+    
+    renders :example2, :for => DocumentController
+
+    build :document do
+      output << "||" << options.text << "||, I rendered this at #{time}"
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+Ruport automatically creates helper methods for each format registered on the controller. These helpers accept a block that will only be called when the particular format is being rendered.
+
+The example below is essentially identical to the code above.
+
+------------------------------------------------------------------------------------------------------
+  class DocumentFormatter < Ruport::Formatter
+
+    renders [:example, :example2], :for => DocumentController
+    
+    build :document do
+      example { output << "At #{time}, I render ||" << options.text << "||" }
+      example2 { output << "||" << options.text << "||, I rendered this at #{time}" }
+    end
+
+  end
+------------------------------------------------------------------------------------------------------
+
+This can come in handy when you have lots of slightly different formats to
+deal with.
+
+=== Related Resources / Digging Deeper ===
+
+ * +Controller::Hooks+ has shortcuts for the standard controllers.
+ * +Controller::Hooks+ also has a +rendering_options+ class method for setting defaults.
+ * Controller has a +run()+ hook that can be used to override the way stages are executed.

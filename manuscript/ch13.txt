@@ -1,0 +1,218 @@
+== Cheatsheet: Using Report and ReportManager ==
+    
+Ruport's +Report+ class is meant to provide a high level interface to some of Ruport's core libraries and utilities.
+
++Report+ provides easy ways to work with +Ruport::Query+
+and +Ruport::Mailer+, and also provides rendering shortcuts.  These
+features make it easier to tie together some of Ruport's lower level bits
+into a single object. 
+
+=== Dealing with Controllers ===
+
++Report+ uses simple hooks to make it act like a 
++Controller+ object. The following code is an example of rendering tables:
+
+------------------------------------------------------------------------------------------------------
+class MyReport < Ruport::Report
+
+  renders_as_table   
+
+  attr_accessor :file
+
+  def renderable_data(format)
+     t = Table(file)
+     t.sub_table { |r| r.a == "foo" }
+  end
+
+end
+
+MyReport.generate do |report|
+  report.file = "in.csv"
+  report.save_as "out.csv" # renders to csv
+  report.save_as "out.pdf" # renders to pdf
+  puts report.to_text # renders to screen as text
+end
+------------------------------------------------------------------------------------------------------  
+
+The other default controllers are also supported, named +renders_as_row+,
++renders_as_group+, and +renders_as_grouping+.  The data returned
+by +renderable_data(format)+ will be passed to the controller you specify.
+
+You can also pass default options to your controller if needed, e.g.
+
+  renders_as_table :show_table_headers => false
+
+==== Using Custom Controllers ====
+
+Most interesting Ruport applications make use of custom controllers. It is
+trivial to make use of them with your reports:
+
+------------------------------------------------------------------------------------------------------
+class MyReport < Ruport::Report
+  renders_with MyCustomController
+
+  def renderable_data(format)
+    # the return of this will be passed as :data to MyCustomController
+  end
+end
+------------------------------------------------------------------------------------------------------
+
+You can then continue to use +as()+, +save_as()+, and the 
++to_format+ shortcuts.
+   
+==== Details About the +save_as()+ Magic ====
+
+For the +save_as()+ function, the follow mappings are used:
+
+------------------------------------------------------------------------------------------------------
+  save_as("foo.txt") forwards to as(:text)
+  save_as("foo.pdf") forwards to as(:pdf) and writes as a binary
+  save_as("foo.csv") forwards to as(:csv)
+  save_as("foo.html") forwards to as(:html) 
+------------------------------------------------------------------------------------------------------
+
+For other extensions, if your controller handles them you can still use +save_as()+, it will just convert the extension to a symbol and pass it to +as()+.
+
+Example: +save_as("foo.xml")+ forwards to +as(:xml)+
+
+These formats will be written using text mode by default, rather than binary.
+You can specify file access flags if needed, e.g.
+
+  save_as("foo.jpg", :flags => "wb")
+
+=== Using +query()+ for Raw SQL Operations ===
+
+The following example shows a report which sets up a number of database
+sources and then generates grouped output.  +query()+ is a shortcut
+interface to +Ruport::Query+, covering the most common needs.
+
+------------------------------------------------------------------------------------------------------
+class MyReport < Ruport::Report
+  
+  renders_as_grouping
+
+  attr_accessor :source
+
+  def prepare
+     add_source :legacy, :dsn => "dbi:mysql:old_db",  :user => :root
+     add_source :default, :dsn => "dbi:mysql:new_db", :user => :root
+  end
+
+  def renderable_data(format)
+     results = query "select name, email from foo where num < 10",
+                     :source => source
+
+     Grouping(results,:by => "name")
+  end
+end 
+
+legacy_report = MyReport.new
+legacy_report.source = :legacy
+legacy_report.save_as "foo.csv"
+
+new_report = MyReport.new # will use :default source
+new_report.save_as "bar.csv"
+------------------------------------------------------------------------------------------------------
+
+=== Mailing Reports via +Report#send_to()+ ===
+
++Report+ offers an alternate interface to +Ruport::Mailer+.
+This allows you to easily attach reports to an email and send them via SMTP.
+
+The following example is for using the Report class directly, but would work
+for subclasses as well.
+
+------------------------------------------------------------------------------------------------------
+r = Ruport::Report.new
+
+r.add_mailer :default,
+             :host => "mail.adelphia.net",
+             :address => "gregory.t.brown@gmail.com"
+
+r.send_to("gregory.t.brown@gmail.com") do |mail|
+  mail.subject = "Hello"
+  mail.attach "foo.csv"
+  mail.text = "This is an email with attached csv"
+end
+------------------------------------------------------------------------------------------------------
+
+=== Some Quick Notes for Using +Report+ in +rope+ ===
+     
+This information is covered in more detail in the +rope+ cheatsheet, but the
+following notes are provided as a quick reference.
+
+*Generating a Report*
+
+rake build report=my_report 
+
+*Running a Report*
+
+rake run report=my_report
+
+*Setting up Sources for +query()+*
+
+If you'd like to share sources between reports, define them in 
++config/environment.rb+.
+
+*Using Autogenerated Controllers*
+      
+To generate the controller definition:
+
+rake build controller=my_controller
+
+In your report, add +require "lib/controllers"+ and the call:
+
+renders_with MyController  
+
+=== Managing Many +Report+ Objects ===
+
+In the ruport-util package there is a tool called 
++ReportManager+ that allows you to select different reports 
+programatically.  This might be useful in web applications, where you'd like
+to determine which class should generate a report via a drop down menu.
+
+The following simple example shows how this might be used:
+
+------------------------------------------------------------------------------------------------------
+class Mars < Ruport::Report
+  
+  acts_as_managed_report
+  renders_as_table
+
+  def renderable_data(format)
+    Table("mars.csv")
+  end
+end 
+
+class Venus < Ruport::Report
+  
+  acts_as_managed_report 
+  renders_as_table
+
+  def renderable_data(format)
+    Table("venus.csv")
+  end
+end    
+ 
+["Mars","Venus"].each do |n|
+  Ruport::ReportManager[n].generate { |r| r.save_as "#{n}.pdf" }  
+end
+------------------------------------------------------------------------------------------------------
+
+Typically, it might be easier to just store report instances in a hash lookup,
+but there are certain cases where you'll want to be able to dynamically
+register and run reports, which is easy to do with +ReportManager+.
+
+If you need to override the name of a report, add a +name+ method to it
+which returns a string to identify the report with.         
+
+=== Related Resources / Digging Deeper ===
+
++Report+ is really most useful when used in conjunction with
++rope+, so you'll want to review that cheatsheet. footnote:[See rope
+cheatsheet.]
+
+Also, much of the heavy lifting can and should be done by your controllers,
+especially using the various hooks available in them.  This class is among the
+feature sets in the ruport-util package that is likely to change over time to
+adapt to people's needs.  
